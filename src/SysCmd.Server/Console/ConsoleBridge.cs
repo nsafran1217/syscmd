@@ -66,6 +66,14 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
             // and the device-to-browser pump is what actually drives it.
             var login = new LoginState(snapshot, machine, target);
 
+            // Which side hangs up is the first thing anyone asks when a session ends by itself,
+            // and syscmd never puts a clock on an idle console - the pumps below block until one
+            // end stops. So say which one it was: a device-side end means the far end dropped the
+            // TCP connection, which for a console-server port is the terminal server's own idle
+            // timeout; a browser-side end means the WebSocket went, which is a closed tab, a lost
+            // network, or a proxy timing the connection out.
+            var endedBy = "the session";
+
             await using (session)
             using (var linked = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
@@ -73,9 +81,15 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
                 {
                     // Either direction ending tears down the other, so a dropped telnet session
                     // closes the browser tab's socket rather than leaving it hanging.
-                    await Task.WhenAny(
-                        PumpDeviceToBrowserAsync(session, socket, login, linked.Token),
-                        PumpBrowserToDeviceAsync(socket, session, login, events, machine, linked.Token));
+                    var device = PumpDeviceToBrowserAsync(session, socket, login, linked.Token);
+                    var browser = PumpBrowserToDeviceAsync(socket, session, login, events, machine, linked.Token);
+
+                    var first = await Task.WhenAny(device, browser);
+                    endedBy = first == device ? $"{endpoint} hung up" : "the browser disconnected";
+
+                    // WhenAny does not rethrow, so a pump that faulted would otherwise be
+                    // reported as an ordinary close with no reason attached.
+                    await first;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -87,7 +101,7 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
                 }
             }
 
-            events.Info("console", $"Console closed on {machine.Name}", machine.Id);
+            events.Info("console", $"Console closed on {machine.Name} - {endedBy}", machine.Id);
             await CloseAsync(socket, "session ended", ct);
         }
     }
