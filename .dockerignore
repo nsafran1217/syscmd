@@ -1,0 +1,24 @@
+# Live configuration holds SNMP community strings and management-processor passwords in plain
+# text. It must never reach an image layer - mount it at runtime instead.
+config/
+
+# Runtime history: the event log and power readings belong to a deployment, not to an image.
+data/
+data.sim/
+
+# Build output, rebuilt inside the image from source.
+**/bin/
+**/obj/
+
+# Smoke-test scaffolding. The tests drive a running app over HTTP, so they have no business
+# in the image.
+node_modules/
+package.json
+package-lock.json
+tests/
+shots/
+
+.git/
+.gitignore
+.vs/
+.vscode/
