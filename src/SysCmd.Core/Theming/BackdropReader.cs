@@ -106,7 +106,7 @@ public static partial class BackdropReader
         for (var i = 0; i < count; i++)
         {
             var entry = strings[1 + i];
-            if (entry.Length < perPixel) throw new FormatException("XPM colour entry is short");
+            if (entry.Length < perPixel) throw new FormatException("XPM color entry is short");
 
             keys[entry[..perPixel]] = (byte)i;
             colors.Add(ParseColorEntry(entry[perPixel..]));

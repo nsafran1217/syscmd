@@ -15,12 +15,10 @@
    This does the same: choosing repaints the page immediately and only the browser's own cookie
    changes, so nobody has to save anything to try a palette on. *@
 
-<CdeWindow Title="Appearance - Colour">
+<CdeWindow Title="Appearance - Color">
     <h1 style="margin:0 0 4px; font-size:20px;">Appearance</h1>
     <p class="muted" style="font-size:12px; margin:0 0 12px;">
-        @Palettes.All.Count CDE palettes and @Backdrops.Names.Count backdrops. A palette stores only
-        a background for each of its eight colour sets; every shadow, highlight and text colour below
-        is derived from it by Motif's own colour calculation.
+        @Palettes.All.Count CDE palettes and @Backdrops.Names.Count backdrops.
     </p>
 
     @if (Palettes.Problems.Count > 0)
@@ -49,7 +47,7 @@
                             @for (var id = 1; id <= 8; id++)
                             {
                                 var set = palette.Set(id);
-                                <span class="swatch" title="@($"Colour set {id}: {set.Bg.Hex}")"
+                                <span class="swatch" title="@($"Color set {id}: {set.Bg.Hex}")"
                                       style="background:@set.Bg.Hex; border-color:@set.TopShadow.Hex @set.BottomShadow.Hex @set.BottomShadow.Hex @set.TopShadow.Hex;"></span>
                             }
                         </span>
@@ -75,11 +73,7 @@
                 }
             </div>
 
-            <h3 class="appearance-heading">Backdrop colour set</h3>
-            <p class="muted" style="font-size:12px; margin:0 0 6px;">
-                dtwm tints each workspace's backdrop with a different colour set, cycling through
-                these four. The pattern is stencilled in the set's background over its bottom shadow.
-            </p>
+            <h3 class="appearance-heading">Backdrop color set</h3>
             <div class="btn-row">
                 @foreach (var id in CdeColorSet.WorkspaceBackdrops)
                 {
@@ -95,14 +89,12 @@
     <div class="inline-toggle" style="margin-bottom:10px;">
         <input type="checkbox" id="random-toggle" checked="@_random" @onchange="ToggleRandomAsync" />
         <label for="random-toggle" style="display:inline; margin:0;">
-            Use a different palette on every page load
+            Random palette on page load
         </label>
     </div>
 
     <p class="muted" style="font-size:12px; margin:0 0 10px;">
-        The palette is chosen when the page is served, so it changes on a reload and holds steady
-        while you move around the app. Tick the palettes to draw from; with none ticked, any of them
-        can come up.
+        Select which palettes can be selected randomly. None selected means any can appear.
     </p>
 
     <div class="pool-list @(_random ? "" : "disabled")">
@@ -121,13 +113,13 @@
 
 <CdeWindow Title="Appearance - Lab default">
     <p style="margin:0 0 10px;">
-        What you have chosen so far is remembered in this browser only. Saving writes it to
-        <span class="mono">app.yaml</span> as the default for anyone who has not chosen for themselves.
+        Per browser setting. Save as lab default to set the default style for new browsers. 
+        Written to <span class="mono">app.yaml</span> 
     </p>
 
     <p class="muted" style="font-size:12px;">
         Current: palette <span class="mono">@(_random ? "random" : _palette)</span>,
-        backdrop <span class="mono">@_backdrop</span>, colour set <span class="mono">@_colorSet</span>.
+        backdrop <span class="mono">@_backdrop</span>, color set <span class="mono">@_colorSet</span>.
     </p>
 
     <div class="btn-row">

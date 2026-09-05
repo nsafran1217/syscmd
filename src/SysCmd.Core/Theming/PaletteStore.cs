@@ -92,13 +92,13 @@ public sealed class PaletteStore
             if (line[0] == '!') break;
 
             if (!XColor.TryParse(line, out var color))
-                throw new FormatException($"line {backgrounds.Count + 1} is not an X colour: '{line}'");
+                throw new FormatException($"line {backgrounds.Count + 1} is not an X color: '{line}'");
 
             backgrounds.Add(color);
             if (backgrounds.Count == 8) break;
         }
 
-        if (backgrounds.Count == 0) throw new FormatException("no colours in file");
+        if (backgrounds.Count == 0) throw new FormatException("no colors in file");
 
         return new CdePalette { Name = name, Colors = Expand(backgrounds) };
     }
