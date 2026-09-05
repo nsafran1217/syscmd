@@ -73,7 +73,12 @@ foreach (var issue in store.Current.Issues)
 
 app.UseStaticFiles();
 app.UseAntiforgery();
-app.UseWebSockets();
+// A console is expected to sit idle - that is what a console is for - but an idle WebSocket is
+// exactly what a reverse proxy reaps. ASP.NET's default keep-alive is two minutes, which is
+// longer than the usual proxy idle timeout, so the ping that would have saved the connection
+// arrives after it has already been cut. Thirty seconds keeps a silent console alive behind any
+// proxy idle timeout of a minute or more, without asking anyone to configure theirs.
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 
 app.MapSysCmdApi();
 app.MapSysCmdTheme();
