@@ -177,6 +177,28 @@ const browser = await chromium.launch();
   ok(box.width > vp.width - 20, 'window fills the phone screen', `${Math.round(box.width)}/${vp.width}`);
   ok(!await page.locator('body').evaluate(b => b.scrollWidth > b.clientWidth), 'no horizontal page scroll');
 
+  // The frame is the same 5px border strip a desktop window wears. It used to be widened to
+  // 20/14/26 on a phone, which was spacing under the old chrome but is geometry under this one -
+  // the bevels stayed put and the content moved, leaving a band of dead face all round.
+  const frame = page.locator('.window-layer .cde-window');
+  const bar = await frame.locator('.cde-titlebar').boundingBox();
+  const border = Math.round(bar.x - box.x);
+  ok(border <= 6, 'the title bar sits against the frame, with no dead space', `${border}px inset`);
+  ok(Math.round((box.x + box.width) - (bar.x + bar.width)) === border, 'and the same on the right');
+
+  // Closing from the window menu has to work under a finger. It did not: the menu hangs off the
+  // title bar, so a tap on one of its entries reached the drag handler, whose preventDefault
+  // cancels the click a browser synthesises from a tap. Harmless with a mouse, fatal with a
+  // finger, which is why this needs a touch context to catch.
+  await page.locator('.window-layer .cw-menu-btn').tap();
+  await page.waitForTimeout(500);
+  const windowMenu = page.locator('.window-layer .cde-titlebar .cde-dropdown');
+  ok(await windowMenu.isVisible(), 'the window menu opens on a tap');
+  await windowMenu.locator('button', { hasText: 'Close' }).tap();
+  await page.waitForTimeout(900);
+  ok(await page.locator('.window-layer .cde-window').count() === 0,
+     'and Close in it actually closes the window');
+
   await page.screenshot({ path: `${shots}/phone-console.png` });
   await ctx.close();
 }

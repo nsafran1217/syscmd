@@ -103,8 +103,13 @@ window.syscmdUi = {
         let mode = null, edge = '', startX = 0, startY = 0, originX = 0, originY = 0, originW = 0, originH = 0;
 
         const onDown = (e, which, which_edge) => {
-            // Ignore the title-bar boxes; only the bar itself drags.
-            if (which === 'move' && e.target.closest('.cw-box')) return;
+            // Only the bar itself drags - not its boxes, and not the window menu that hangs off
+            // it. That menu matters more than it looks: it is a child of the title bar, so a
+            // touch on one of its entries starts here, and the preventDefault below would cancel
+            // the click the browser synthesises from the tap. On a mouse that is harmless -
+            // preventing default on mousedown does not stop the click - which is why closing a
+            // window from its window menu worked everywhere except under a finger.
+            if (which === 'move' && e.target.closest('.cw-box, .menu-anchor')) return;
             if (el.classList.contains('maximised')) return;
             if (which === 'resize' && el.classList.contains('shaded')) return;
             if (e.button !== undefined && e.button !== 0) return;

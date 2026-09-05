@@ -1572,5 +1572,4 @@ label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
 /* The terminal needs to stay usable once a virtual keyboard takes half the screen. */
 @media (max-width: 640px) {
     .terminal-frame { height: min(58vh, 420px); }
-    .cde-window { padding: 20px 14px 26px; }
 }
