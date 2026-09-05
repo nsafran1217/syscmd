@@ -256,13 +256,18 @@ h1:focus { outline: none; }
         Layering inside a window while a pull-down is open:
           client area  0   (xterm draws its own layers up to 10)
           catcher     30   swallows a click anywhere else, to dismiss the menu
-          chrome      40   this bar and the menu bar stay live
-          pull-downs  60   inside the chrome, so above the catcher
-        Without the chrome sitting above the catcher, the second half of a double-click on
-        the window-menu box lands on the catcher and the window never closes.
+          menu bar    40   stays live, and its pull-downs drop over the client area
+          title bar   50   above the menu bar, because the window menu drops onto it
+          pull-downs  60   but only within their own bar's stacking context
+        Each bar sets a z-index, so it becomes a stacking context and its pull-down cannot
+        rise above the other bar however high that 60 goes: the bars' own order is what
+        decides. The title bar therefore has to outrank the menu bar, not merely match it -
+        matching left the window menu painted underneath the Window/Edit/... buttons.
+        The chrome must also sit above the catcher, or the second half of a double-click on
+        the window menu button lands on the catcher and the window never closes.
     */
     position: relative;
-    z-index: 40;
+    z-index: 50;
     padding: 2px;
     background: var(--accent);
     border: 2px solid;
@@ -391,7 +396,8 @@ h1:focus { outline: none; }
     display: flex;
     align-items: stretch;
     gap: 2px;
-    /* Same layer as the title bar: stay clickable while a pull-down is open. */
+    /* Below the title bar, above the catcher. See the note on .cde-titlebar. Its own
+       pull-downs drop downwards over the client area, so they never need to clear it. */
     position: relative;
     z-index: 40;
     margin-top: 4px;

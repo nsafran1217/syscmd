@@ -54,6 +54,40 @@ for (let attempt = 1; attempt <= 3; attempt++) {
   }
 }
 
+console.log('\n[the window menu paints over the menu bar]');
+await openConsole();
+{
+  const w = p.locator('.window-layer .cde-window').first();
+  await w.locator('.cw-menu-btn').click();
+  await p.waitForTimeout(400);
+
+  const menu = w.locator('.cde-dropdown').first();
+  ok(await menu.isVisible(), 'window menu opens');
+
+  // It drops from the title bar down across the menu bar, so hit-test a point inside it
+  // that overlaps that row. Bounding boxes alone would not catch this: the menu is laid
+  // out correctly and merely painted underneath.
+  const box = await menu.boundingBox();
+  const bar = await w.locator('.cde-menubar').boundingBox();
+  const y = Math.max(bar.y + bar.height / 2, box.y + 8);
+  ok(y < box.y + box.height, 'the menu really does overlap the menu bar row');
+
+  const hit = await p.evaluate(([x, yy]) => {
+    const el = document.elementFromPoint(x, yy);
+    if (!el) return 'nothing';
+    if (el.closest('.cde-dropdown')) return 'dropdown';
+    if (el.closest('.cde-menubar')) return 'menubar';
+    return el.className || el.tagName;
+  }, [box.x + 20, y]);
+  ok(hit === 'dropdown', 'the window menu is on top, not under the Window/Edit buttons', hit);
+
+  // Its entries have to be clickable where they overlap.
+  await menu.locator('button', { hasText: 'Close' }).click();
+  await p.waitForTimeout(600);
+  ok(await p.locator('.window-layer .cde-window').count() === 0,
+     'an overlapping entry is clickable');
+}
+
 console.log('\n[the chrome stays usable while a pull-down is open]');
 await openConsole();
 const win = p.locator('.window-layer .cde-window').first();
