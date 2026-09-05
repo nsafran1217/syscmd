@@ -604,7 +604,9 @@ h1:focus { outline: none; }
 .cde-menubar {
     display: flex;
     align-items: stretch;
-    gap: 2px;
+    /* No gap. The 16px between labels in a real dtterm menu bar is each cascade button's own
+       8px margin on either side, measured off docs/website_reference/img/default-css. */
+    gap: 0;
     /* Below the title bar, above the catcher. See the note on .cde-titlebar. Its own
        pull-downs drop downwards over the client area, so they never need to clear it. */
     position: relative;
@@ -620,32 +622,40 @@ h1:focus { outline: none; }
 
 .cde-menubar .spacer { flex: 1; }
 
-.cde-menubar > button {
+.cde-menubar .menu-anchor > button {
     font: inherit;
     font-size: 13px;
     color: var(--menu-fg);
     background: none;
-    /* CDE sets enableThinThickness, so a Motif widget's relief is 1px, not the default 2. */
+    /* CDE sets enableThinThickness, so every Motif relief is 1px rather than the default 2 -
+       menu bars, cascade buttons, menu panes and menu items alike (_XmSetThickness in
+       docs/motif-code/lib/Xm/Display.c). Transparent at rest so arming cannot shift the label. */
     border: 1px solid transparent;
-    padding: 3px 10px;
+    padding: 4px 8px;
     cursor: pointer;
     min-height: 0;
     white-space: nowrap;
 }
 
-.cde-menubar > button:hover:not(:disabled),
-.cde-menubar > button.open {
-    border-color: var(--menu-hi) var(--menu-lo) var(--menu-lo) var(--menu-hi);
-}
+/*
+   Note the selector: the cascade buttons are wrapped in .menu-anchor so their pull-downs can be
+   positioned against them, so a direct child of .cde-menubar is the anchor, not the button.
+   window-menu-smoke.mjs reaches for them the same way.
 
-/* An open pull-down leaves its button armed, which in Motif means the select colour and a
-   reversed relief. */
-.cde-menubar > button.open {
+   No hover rule, on purpose. A Motif cascade button has no pointer-over state: it is either
+   armed or it is not, and it arms when its menu is posted. Lighting one up under the pointer
+   is a web habit, not a CDE one.
+
+   Armed, with CDE's enableEtchedInMenu, it is filled with the colour set's select colour and
+   given a shadow-IN relief - recessed, not raised. That is DrawShadow in CascadeBG.c choosing
+   XmSHADOW_IN, and the arm colour resolving to _XmSelectColorDefault.
+*/
+.cde-menubar .menu-anchor > button.open {
     background: var(--menu-sel);
     border-color: var(--menu-lo) var(--menu-hi) var(--menu-hi) var(--menu-lo);
 }
 
-.cde-menubar > button:disabled { opacity: 0.45; cursor: default; }
+.cde-menubar .menu-anchor > button:disabled { cursor: default; }
 
 /* Mnemonic underline, the way Motif marks the keyboard letter. */
 .cde-menubar u, .cde-dropdown u { text-decoration: underline; text-underline-offset: 2px; }
@@ -661,7 +671,7 @@ h1:focus { outline: none; }
     min-width: 190px;
     padding: 3px;
     background: var(--menu-face);
-    border: 2px solid;
+    border: 1px solid;
     border-color: var(--menu-hi) var(--menu-lo) var(--menu-lo) var(--menu-hi);
     box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
 }
@@ -676,15 +686,24 @@ h1:focus { outline: none; }
     font-size: 13px;
     color: var(--menu-fg);
     background: none;
-    border: 0;
-    padding: 6px 12px;
+    /* Reserved at rest so arming an item cannot shift the label by a pixel. */
+    border: 1px solid transparent;
+    padding: 5px 11px;
     cursor: pointer;
     white-space: nowrap;
 }
 
-/* Motif highlights the item under the pointer with the colour set's select colour. */
-.cde-dropdown button:hover:not(:disabled) { background: var(--menu-sel); }
-.cde-dropdown button:disabled { opacity: 0.45; cursor: not-allowed; }
+/*
+   An armed menu item gets both halves of what BorderHighlight does in PushBG.c under
+   enableEtchedInMenu: filled with the select colour, and relieved shadow-IN. The fill alone
+   reads as a web menu; it is the recessed edge that makes it read as Motif.
+*/
+.cde-dropdown button:hover:not(:disabled) {
+    background: var(--menu-sel);
+    border-color: var(--menu-lo) var(--menu-hi) var(--menu-hi) var(--menu-lo);
+}
+
+.cde-dropdown button:disabled { cursor: not-allowed; }
 .cde-dropdown hr { border: 0; border-top: 1px solid var(--menu-lo); border-bottom: 1px solid var(--menu-hi); margin: 3px 0; }
 
 .cde-dropdown .accel { float: right; margin-left: 20px; opacity: 0.7; }
@@ -901,11 +920,8 @@ body.cw-resizing { user-select: none; cursor: nwse-resize; }
     font: inherit;
     color: var(--fg);
     background: var(--face);
-    border: 3px solid var(--face);
-    border-top-color: var(--highlight);
-    border-left-color: var(--highlight);
-    border-right-color: var(--shadow);
-    border-bottom-color: var(--shadow);
+    border: 1px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
     padding: 5px 14px;
     cursor: pointer;
     user-select: none;
@@ -1193,14 +1209,40 @@ label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
     font-size: 13px;
     color: var(--fg);
     background: none;
-    border: 0;
-    padding: 6px 10px;
+    /* Reserved at rest so arming cannot shift the label. */
+    border: 1px solid transparent;
+    padding: 5px 9px;
     cursor: pointer;
 }
 
-.cde-contextmenu button:hover:not(:disabled) { background: var(--accent); color: var(--accent-fg); }
-.cde-contextmenu button:disabled { opacity: 0.45; cursor: not-allowed; }
-.cde-contextmenu hr { border: 0; border-top: 1px solid var(--shadow); margin: 3px 0; }
+/* A popup menu is a menu: armed items get the select colour and a shadow-IN relief, the same
+   as a pull-down's. */
+.cde-contextmenu button:hover:not(:disabled) {
+    background: var(--face-pressed);
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+.cde-contextmenu button:disabled { cursor: not-allowed; }
+
+.cde-contextmenu hr {
+    border: 0;
+    border-top: 1px solid var(--shadow);
+    border-bottom: 1px solid var(--highlight);
+    margin: 3px 0;
+}
+
+/*
+   Motif does not fade an insensitive label, it draws it through a 50% stipple - a checkerboard
+   of the foreground, one pixel on and one off (_XmGetInsensitiveStippleGC). Masking the text
+   with a 2px checkerboard is the same thing, and it is why a greyed-out CDE menu entry looks
+   dithered rather than merely pale.
+*/
+.cde-dropdown button:disabled,
+.cde-contextmenu button:disabled,
+.cde-menubar .menu-anchor > button:disabled {
+    mask-image: repeating-conic-gradient(#000 0% 25%, #0000 0% 50%);
+    mask-size: 2px 2px;
+}
 
 /* ------------------------------------------------------------------ dialogs */
 

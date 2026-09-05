@@ -60,7 +60,8 @@
                     <button type="button" class="@(isOpen ? "open" : "")"
                             aria-haspopup="@(menu.Action is null ? "true" : "false")"
                             aria-expanded="@(isOpen ? "true" : "false")"
-                            @onclick="() => ActivateAsync(menu)" @onclick:stopPropagation="true">
+                            @onclick="() => ActivateAsync(menu)" @onclick:stopPropagation="true"
+                            @onmouseenter="() => TrackMenu(menu)">
                         @Mnemonic(menu.Label, menu.MnemonicIndex)
                     </button>
 
@@ -95,7 +96,8 @@
                 var helpOpen = _openMenu == help.Label;
                 <div class="menu-anchor">
                     <button type="button" class="@(helpOpen ? "open" : "")"
-                            @onclick="() => ToggleMenu(help.Label)" @onclick:stopPropagation="true">
+                            @onclick="() => ToggleMenu(help.Label)" @onclick:stopPropagation="true"
+                            @onmouseenter="() => TrackMenu(help)">
                         @Mnemonic(help.Label, help.MnemonicIndex)
                     </button>
                     @if (helpOpen)
@@ -152,6 +154,9 @@
 @code {
     /// <summary>The eight frame pieces, in the order dtwm generates them.</summary>
     private static readonly string[] Edges = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+
+    /// <summary>The open pull-down was posted by the pointer crossing the bar, not by a click.</summary>
+    private bool _trackedOpen;
 
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter] public string? Class { get; set; }
@@ -225,9 +230,34 @@
         ToggleMenu(menu.Label);
     }
 
+    /// <summary>
+    /// Motif tracks the pointer along a menu bar that is already posted: sliding across another
+    /// cascade button posts that one, with no second click. Nothing happens while the bar is idle,
+    /// because a Motif cascade button has no pointer-over state at all - it is armed or it is not.
+    /// An entry that acts on click has nothing to post, so moving onto it just unposts.
+    /// </summary>
+    private void TrackMenu(CdeMenu menu)
+    {
+        if (_openMenu is null || _openMenu == menu.Label) return;
+
+        _openMenu = menu.Action is null ? menu.Label : null;
+        _trackedOpen = _openMenu is not null;
+    }
+
     private void ToggleMenu(string label)
     {
         _windowMenuOpen = false;
+
+        // A click that lands on the entry the pointer just tracked onto must not unpost it: the
+        // press is how you got here, and in Motif pressing a cascade button that is already
+        // posted keeps it posted. Only a second, deliberate click closes it.
+        if (_openMenu == label && _trackedOpen)
+        {
+            _trackedOpen = false;
+            return;
+        }
+
+        _trackedOpen = false;
         _openMenu = _openMenu == label ? null : label;
     }
 
@@ -241,6 +271,7 @@
     {
         _openMenu = null;
         _windowMenuOpen = false;
+        _trackedOpen = false;
     }
 
     private async Task RunAsync(CdeMenuItem item)
