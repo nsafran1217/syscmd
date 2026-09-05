@@ -18,15 +18,12 @@ services:
     ports:
       - "${SYSCMD_PORT:-5080}:5080"
 
-    # Runs as you, not as the image's own app user, because both mounts have to be writable by
-    # the container *and* hand-editable by you: config/ is YAML you are meant to edit, and the
-    # configuration pages write it back. Owning the directories as 1654 instead would mean sudo
-    # every time you touched a file. Nothing in /app needs write access, so any uid works.
+
     user: "${SYSCMD_UID:-1000}:${SYSCMD_GID:-1000}"
 
     volumes:
-      - ./docker/config:/app/config
-      - ./docker/data:/app/data
+      - /dockerdata/syscmd/config:/app/config
+      - /dockerdata/syscmd/data:/app/data
 
     environment:
       # A container is UTC, which makes the event log's timestamps confusing next to the lab's.
@@ -36,16 +33,3 @@ services:
       # antiforgery tokens on any page still open. Pointing HOME at the mounted data directory
       # keeps them with the rest of the runtime state.
       HOME: /app/data
-
-  # Same image, no volumes, no hardware: config.sim ships inside it. Runs as the image's own app
-  # user so it can write its event log to /app/data.sim, which is why this one has no `user:`.
-  syscmd-sim:
-    profiles: ["sim"]
-    build: .
-    image: syscmd
-    container_name: syscmd-sim
-    command: ["--simulate"]
-    ports:
-      - "${SYSCMD_PORT:-5080}:5080"
-    environment:
-      TZ: ${TZ:-UTC}
