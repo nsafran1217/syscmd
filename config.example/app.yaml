@@ -1,7 +1,14 @@
 # Global settings. Also editable from the GUI under Configuration.
 site:
   name: Home Lab
-  theme: dec
+  # Default CDE palette and backdrop, by file name under wwwroot/cde/. A browser that picks its
+  # own on the Appearance page overrides these; everyone else, and every first visit, gets them.
+  theme: Default
+  backdrop: Toronto
+  # Which colour set tints the backdrop. dtwm cycles workspaces through 3, 5, 6 and 7.
+  backdropColorSet: 3
+  # Palettes a browser set to "random" draws from. Empty means any of them.
+  randomThemes: []
 
 power:
   # How often every PDU is polled for its load reading.

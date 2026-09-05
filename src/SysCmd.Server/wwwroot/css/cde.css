@@ -1,8 +1,97 @@
 /* ---------------------------------------------------------------------------
    CDE chrome: window frames, beveled controls, menus, tables.
-   Every colour and image here comes from a custom property so a second theme
-   is just a new palette file - see theme-dec.css.
+
+   No colour is written down in this file. /cde/theme.css supplies eight CDE
+   colour sets as --cs1-* .. --cs8-*, each one a background plus the foreground,
+   top shadow, bottom shadow and select colour that Motif derives from it. The
+   block below is the only place that decides which set paints what, so the
+   mapping stays next to the rules that use it.
+
+   Which set means what is CDE's own assignment, taken from Motif's resource
+   defaults rather than from dtstyle's manual page, which is stale on this point:
+
+     1  active window borders          5  main window background   (primary)
+     2  inactive borders, widget face  6  dialogs and menu bars    (secondary)
+     3  workspace switch / backdrop    7  workspace switch
+     4  text and list areas            8  front panel background
    --------------------------------------------------------------------------- */
+
+:root {
+    /* Colour set 2: the widget face everything bevels from. */
+    --face: var(--cs2-bg);
+    --highlight: var(--cs2-ts);
+    --shadow: var(--cs2-bs);
+    --fg: var(--cs2-fg);
+
+    /* Motif has no hover state, only armed - and armed is the select colour. Hover is this
+       UI's own addition, so it is a light touch towards the highlight rather than a new colour. */
+    --face-hover: color-mix(in srgb, var(--cs2-bg) 86%, var(--cs2-ts));
+    --face-pressed: var(--cs2-sel);
+    --label-fg: color-mix(in srgb, var(--cs2-fg) 72%, var(--cs2-bg));
+    --rule: var(--cs2-ts);
+
+    /* Colour set 1: the active title bar and everything that accents from it. */
+    --accent: var(--cs1-bg);
+    --accent-fg: var(--cs1-fg);
+    --accent-hi: var(--cs1-ts);
+    --accent-lo: var(--cs1-bs);
+    --title-fg: var(--cs1-fg);
+
+    /* Colour set 5: what an application paints its main area with. */
+    --terminal: var(--cs5-bg);
+    --terminal-fg: var(--cs5-fg);
+    --panel-bg: var(--cs5-sel);
+    --table-head: var(--cs5-sel);
+    --table-hover: color-mix(in srgb, var(--cs5-bg) 80%, var(--cs5-ts));
+
+    /* Colour set 6: menu bars, pull-downs and dialogs. */
+    --menu-face: var(--cs6-bg);
+    --menu-fg: var(--cs6-fg);
+    --menu-hi: var(--cs6-ts);
+    --menu-lo: var(--cs6-bs);
+    --menu-sel: var(--cs6-sel);
+
+    /* Colour set 4: text and list areas - fields, the event log, console interiors. */
+    --field-bg: var(--cs4-bg);
+    --field-fg: var(--cs4-fg);
+    --log-bg: var(--cs4-bg);
+    --code-bg: var(--cs4-bg);
+    --code-fg: var(--cs4-fg);
+
+    /*
+       Status colours keep their hue whatever the palette does: an LED that turns beige under a
+       pastel palette has stopped being an indicator. The indicators themselves are fixed, since
+       they are solid shapes with their own outline.
+    */
+    --led-on: #57d06a;
+    --led-off: #333744;
+    --led-unknown: #9aa0ad;
+    --led-busy: #e0a24a;
+
+    /*
+       Coloured *text*, though, cannot be fixed. Half the shipped palettes are light and half are
+       dark, so a pale amber warning that reads well on slate disappears on wheat. Mixing in the
+       surface's own foreground - black on a light colour set, white on a dark one - keeps the hue
+       while pushing the value whichever way it has to go. --accent-text does the same for the
+       title-bar colour when it has to be read as text rather than sat on.
+    */
+    --warn-fg: color-mix(in srgb, #c87d00 70%, var(--fg));
+    --danger-fg: color-mix(in srgb, #d02f1f 68%, var(--fg));
+    --accent-text: color-mix(in srgb, var(--accent) 60%, var(--fg));
+
+    /*
+       Frame geometry, from dtwm. resizeBorderWidth is 5 in CDE's shipped session resources;
+       the title bar is the font's ascent plus descent plus WM_TITLE_BAR_PADDING (4); and the
+       corner handle's arms are as long as the title bar is tall plus one border
+       (CornerWidth in WmCDInfo.c). Every title-bar gadget is a square of the bar's height.
+    */
+    --frame-border: 5px;
+    --frame-bevel: 2px;
+    --title-h: 22px;
+    --corner: calc(var(--title-h) + var(--frame-border));
+
+    --mono: 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace;
+}
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -15,11 +104,19 @@ body {
                  'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
     font-size: 14px;
     color: var(--fg);
-    background: var(--desktop);
+    /* dtwm paints the root window in the backdrop colour set's bottom shadow and stencils the
+       tile over it in that set's background, so the ground colour is right even before the
+       tile arrives - and stays right if it never does. */
+    background-color: var(--desktop-ground);
+    background-image: var(--desktop-image);
+    background-size: var(--desktop-size);
+    background-repeat: repeat;
     image-rendering: pixelated;
 }
 
-a { color: var(--link); }
+/* The accent contrasts with the window face in every shipped palette, but not by enough in
+   all of them to carry the meaning alone, so links are underlined rather than only coloured. */
+a { color: var(--accent-text); text-decoration: underline; }
 
 /* Routing focuses the page heading so screen readers announce it. A heading is not a
    control anyone tabs to, so the ring is pure noise - and Chromium still treats this
@@ -119,9 +216,11 @@ h1:focus { outline: none; }
     align-items: center;
     gap: 10px;
     padding: 4px 8px;
+    /* Colour set 8 is the front panel's, and this strip and the navigation panel are what
+       this app has instead of one. */
     background: var(--face);
     border-bottom: 2px solid var(--shadow);
-    box-shadow: 0 1px 0 var(--highlight) inset;
+    box-shadow: 0 2px 0 var(--highlight) inset;
 }
 
 .app-topbar .topbar-title {
@@ -218,40 +317,86 @@ h1:focus { outline: none; }
 /* ------------------------------------------------------------- window frames */
 
 /*
-   CDE window decoration, drawn entirely in CSS rather than from nine-slice images.
-   The Motif frame is a stack of bevels: a raised outer frame, a raised title bar in
-   the accent colour, an optional menu bar, and a sunken client area. Because every
-   part is a real element, the title-bar boxes and the menu bar can carry behaviour
-   instead of being painted-on decoration.
+   A CDE window decoration, drawn to dtwm's own geometry rather than sliced from images.
+   Because every part is a real element, the title-bar gadgets and the resize handles carry
+   behaviour instead of being painted-on decoration.
 
-   Motif button layout, which is what the reference screenshots show:
+   The frame is a 5px border strip (dtwm's resizeBorderWidth, pinned to 5 in CDE's shipped
+   session resources). Its outer 2px is a raised bevel, its inner 1px is the join down to
+   the client area, and eight 1px lines cut it into four corner handles and four edge
+   stretchers. Those join lines are the signature: a Motif frame without them reads as a
+   generic bevel. The corner arms are as long as the title bar is tall plus one border,
+   which is CornerWidth() in WmCDInfo.c.
+
+   Page windows are not resizable but still wear the resize frame, because that is what a
+   CDE window looks like; only floating windows get handles that do anything.
+
+   Motif gadget layout, which is what the reference screenshots show:
      left box   - window menu (click opens it, double-click closes the window)
      right boxes- minimise (small square) then maximise (large square)
 */
 
 .cde-window {
     position: relative;
-    background: var(--face);
-    padding: 4px;
     margin-bottom: 20px;
-    border: 3px solid;
-    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+    padding: var(--frame-border);
+    background-color: var(--face);
+
+    /* The eight join lines. Each is the 1px bottom-shadow cap on the free end of a corner
+       arm, laid one corner-length in from each end of each border strip. */
+    background-image:
+        var(--cw-join), var(--cw-join), var(--cw-join), var(--cw-join),
+        var(--cw-join), var(--cw-join), var(--cw-join), var(--cw-join);
+    background-repeat: no-repeat;
+    background-size:
+        1px var(--frame-border), 1px var(--frame-border),
+        1px var(--frame-border), 1px var(--frame-border),
+        var(--frame-border) 1px, var(--frame-border) 1px,
+        var(--frame-border) 1px, var(--frame-border) 1px;
+    background-position:
+        left  calc(var(--corner) - 1px) top 0,
+        right calc(var(--corner) - 1px) top 0,
+        left  calc(var(--corner) - 1px) bottom 0,
+        right calc(var(--corner) - 1px) bottom 0,
+        left  0 top    calc(var(--corner) - 1px),
+        left  0 bottom calc(var(--corner) - 1px),
+        right 0 top    calc(var(--corner) - 1px),
+        right 0 bottom calc(var(--corner) - 1px);
 }
 
-/* The thin groove just inside the outer frame, as Motif draws it. */
+:root { --cw-join: linear-gradient(var(--shadow), var(--shadow)); }
+
+/* The outer 2px raised bevel. A CSS border mitres its corners diagonally, which is exactly
+   how Motif joins the two shadows. */
 .cde-window::before {
     content: "";
     position: absolute;
-    inset: 1px;
+    inset: 0;
+    border: var(--frame-bevel) solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+    pointer-events: none;
+}
+
+/* The 1px join at the inside edge of the strip, recessed so the client area sits below the
+   frame rather than on top of it. */
+.cde-window::after {
+    content: "";
+    position: absolute;
+    inset: calc(var(--frame-border) - 1px);
     border: 1px solid;
     border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
     pointer-events: none;
 }
 
+/*
+   The title bar is not a box containing buttons: dtwm lays four gadgets edge to edge - system,
+   title, minimise, maximise - and bevels each one separately. Sitting flush, each gadget's
+   bottom shadow meets its neighbour's top highlight, which is the seam the screenshots show.
+*/
 .cde-titlebar {
     display: flex;
-    align-items: center;
-    gap: 4px;
+    align-items: stretch;
+    height: var(--title-h);
     /*
         Layering inside a window while a pull-down is open:
           client area  0   (xterm draws its own layers up to 10)
@@ -268,45 +413,48 @@ h1:focus { outline: none; }
     */
     position: relative;
     z-index: 50;
-    padding: 2px;
-    background: var(--accent);
-    border: 2px solid;
-    border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
     user-select: none;
 }
 
 .cde-titlebar .cw-title {
     flex: 1;
     min-width: 0;
+    padding: 0 4px;
     text-align: center;
+    line-height: calc(var(--title-h) - 2px);
     font-size: 14px;
     color: var(--title-fg);
+    background: var(--accent);
+    border: 1px solid;
+    border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding: 0 4px;
 }
 
-/* An inactive floating window drops to the frame colour, as a real window manager does. */
-.cde-window.inactive > .cde-titlebar {
+/* An inactive frame drops from colour set 1 to colour set 2, which is exactly what dtwm's
+   activeColorSetId and inactiveColorSetId defaults mean. */
+.cde-window.inactive > .cde-titlebar .cw-title,
+.cde-window.inactive > .cde-titlebar .cw-box {
     background: var(--face);
     border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
 }
 
-.cde-window.inactive > .cde-titlebar .cw-title { color: var(--label-fg); }
+.cde-window.inactive > .cde-titlebar .cw-title { color: var(--fg); }
 
-/* Title-bar boxes ------------------------------------------------------------ */
+/* Title-bar gadgets ---------------------------------------------------------- */
 
+/* Every gadget is a square of the title bar's height. */
 .cw-box {
     flex: none;
-    width: 21px;
-    height: 21px;
+    width: var(--title-h);
+    height: var(--title-h);
     padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--accent);
-    border: 2px solid;
+    border: 1px solid;
     border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
     cursor: pointer;
     color: inherit;
@@ -314,69 +462,58 @@ h1:focus { outline: none; }
     min-height: 0;
 }
 
-.cde-window.inactive .cw-box {
-    background: var(--face);
-    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+.cw-box:active { border-color: var(--accent-lo) var(--accent-hi) var(--accent-hi) var(--accent-lo); }
+
+.cw-box:focus-visible { outline: 2px solid var(--fg); outline-offset: -3px; }
+
+/*
+   The glyphs are outlines, not fills. BevelRectangle draws a 1px shadow frame and leaves the
+   interior showing the gadget behind it, so a filled bar or square would be wrong. Sizes are
+   dtwm's, for a gadget tall enough to reach the default branch of each routine:
+     window menu  (width - 8) x 4    a horizontal drawer handle
+     minimise     4 x 4              a small square, centred
+     maximise     (height - 8) sq    a large square
+*/
+.cw-box .glyph {
+    display: block;
+    background: transparent;
+    border: 1px solid;
+    border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
 }
 
-.cw-box:active {
+.cw-box.cw-menu-btn .glyph { width: calc(var(--title-h) - 8px); height: 4px; }
+
+.cw-box.cw-min .glyph { width: 4px; height: 4px; }
+
+.cw-box.cw-max .glyph { width: calc(var(--title-h) - 8px); height: calc(var(--title-h) - 8px); }
+
+/* dtwm hands BevelMaximizeButton its shadow lists the other way round once the window is
+   maximised, so the square reads as pressed in. */
+.cde-window.maximised .cw-box.cw-max .glyph {
     border-color: var(--accent-lo) var(--accent-hi) var(--accent-hi) var(--accent-lo);
-}
-
-.cw-box:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
-
-/* The glyphs are drawn rather than typed, so they scale with the frame and stay crisp. */
-.cw-box .glyph { display: block; background: transparent; }
-
-.cw-box.cw-menu-btn .glyph {
-    width: 11px;
-    height: 3px;
-    background: var(--accent-fg);
-    border-top: 1px solid var(--accent-hi);
-    border-bottom: 1px solid var(--accent-lo);
-}
-
-.cw-box.cw-min .glyph {
-    width: 6px;
-    height: 6px;
-    border: 2px solid;
-    border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
-}
-
-.cw-box.cw-max .glyph {
-    width: 12px;
-    height: 12px;
-    border: 2px solid;
-    border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
 }
 
 .cde-window.inactive .cw-box .glyph {
     border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
 }
 
-.cde-window.inactive .cw-box.cw-menu-btn .glyph { background: var(--fg); }
-
 /* Client area ---------------------------------------------------------------- */
 
+/* No bevel of its own: the frame's inner join and the title gadget's bottom shadow already
+   step down to it, which is all dtwm draws at the default bevel widths. */
 .cde-window > .window-content {
-    margin-top: 4px;
     padding: 12px 14px 14px;
-    border: 2px solid;
-    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
     background: var(--terminal);
+    color: var(--terminal-fg);
 }
 
 /* Rolled up by the minimise box: the frame stays, the client area goes. */
 .cde-window.shaded > .window-content,
 .cde-window.shaded > .cde-menubar { display: none; }
 
-/* A window with no decoration still needs its client area to look right. */
-.cde-window.plain > .window-content { margin-top: 0; }
-
 .cde-panel {
-    border: 2px solid var(--shadow);
-    border-top-color: var(--highlight);
-    border-left-color: var(--highlight);
+    border: 1px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
     background: var(--panel-bg);
     padding: 12px;
     margin-bottom: 12px;
@@ -386,8 +523,80 @@ h1:focus { outline: none; }
     margin: 0 0 10px;
     font-size: 14px;
     letter-spacing: 0.04em;
-    color: var(--accent);
+    /* Not the accent: on a light primary colour set it would not contrast with the face it
+       sits on, and there are forty-one palettes to stay readable in. */
+    color: var(--fg);
     text-transform: uppercase;
+}
+
+/* ------------------------------------------------- colour sets by surface */
+
+/*
+   Motif gives a widget the colour set of the window it lives in, and its children inherit it -
+   which is why a button inside an application window is not the same grey as the frame around
+   it, and why black-on-tan text does not end up on a slate background. The same thing happens
+   here by rebinding the aliases on whichever surface owns them. Every rule below this point
+   just says var(--face) or var(--fg) and follows along, including inside nested surfaces.
+
+   Order matters where one surface sits inside another of equal specificity: the console
+   interior has to come after the general client area to win.
+*/
+
+/* Client area: colour set 5, an application's primary. */
+.cde-window > .window-content {
+    --face: var(--cs5-bg);
+    --highlight: var(--cs5-ts);
+    --shadow: var(--cs5-bs);
+    --fg: var(--cs5-fg);
+    --face-hover: color-mix(in srgb, var(--cs5-bg) 86%, var(--cs5-ts));
+    --face-pressed: var(--cs5-sel);
+    --label-fg: color-mix(in srgb, var(--cs5-fg) 72%, var(--cs5-bg));
+    --rule: var(--cs5-ts);
+    color: var(--fg);
+}
+
+/* Menu bars, pull-downs, context menus and dialogs: colour set 6, CDE's secondary. */
+.cde-menubar,
+.cde-dropdown,
+.cde-contextmenu,
+.cde-dialog {
+    --face: var(--cs6-bg);
+    --highlight: var(--cs6-ts);
+    --shadow: var(--cs6-bs);
+    --fg: var(--cs6-fg);
+    --face-hover: color-mix(in srgb, var(--cs6-bg) 86%, var(--cs6-ts));
+    --face-pressed: var(--cs6-sel);
+    --label-fg: color-mix(in srgb, var(--cs6-fg) 72%, var(--cs6-bg));
+    --rule: var(--cs6-ts);
+    color: var(--fg);
+}
+
+/* Text and list areas: colour set 4. */
+.event-log,
+.terminal-window > .window-content {
+    --face: var(--cs4-bg);
+    --highlight: var(--cs4-ts);
+    --shadow: var(--cs4-bs);
+    --fg: var(--cs4-fg);
+    --face-hover: color-mix(in srgb, var(--cs4-bg) 86%, var(--cs4-ts));
+    --face-pressed: var(--cs4-sel);
+    --label-fg: color-mix(in srgb, var(--cs4-fg) 72%, var(--cs4-bg));
+    --rule: var(--cs4-ts);
+    color: var(--fg);
+}
+
+/* The front panel: colour set 8. */
+.app-topbar,
+.app-nav {
+    --face: var(--cs8-bg);
+    --highlight: var(--cs8-ts);
+    --shadow: var(--cs8-bs);
+    --fg: var(--cs8-fg);
+    --face-hover: color-mix(in srgb, var(--cs8-bg) 86%, var(--cs8-ts));
+    --face-pressed: var(--cs8-sel);
+    --label-fg: color-mix(in srgb, var(--cs8-fg) 72%, var(--cs8-bg));
+    --rule: var(--cs8-ts);
+    color: var(--fg);
 }
 
 /* --------------------------------------------------------------- menu bars */
@@ -395,41 +604,58 @@ h1:focus { outline: none; }
 .cde-menubar {
     display: flex;
     align-items: stretch;
-    gap: 2px;
+    /* No gap. The 16px between labels in a real dtterm menu bar is each cascade button's own
+       8px margin on either side, measured off docs/website_reference/img/default-css. */
+    gap: 0;
     /* Below the title bar, above the catcher. See the note on .cde-titlebar. Its own
        pull-downs drop downwards over the client area, so they never need to clear it. */
     position: relative;
     z-index: 40;
-    margin-top: 4px;
     padding: 2px;
-    background: var(--face);
-    border: 2px solid;
-    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+    /* Colour set 6 is CDE's secondary: menu bars, menus and dialogs, so that a dialog can be
+       recognised as belonging to the window that raised it. */
+    background: var(--menu-face);
+    border: 1px solid;
+    border-color: var(--menu-hi) var(--menu-lo) var(--menu-lo) var(--menu-hi);
     user-select: none;
 }
 
 .cde-menubar .spacer { flex: 1; }
 
-.cde-menubar > button {
+.cde-menubar .menu-anchor > button {
     font: inherit;
     font-size: 13px;
-    color: var(--fg);
+    color: var(--menu-fg);
     background: none;
-    border: 2px solid transparent;
-    padding: 2px 10px;
+    /* CDE sets enableThinThickness, so every Motif relief is 1px rather than the default 2 -
+       menu bars, cascade buttons, menu panes and menu items alike (_XmSetThickness in
+       docs/motif-code/lib/Xm/Display.c). Transparent at rest so arming cannot shift the label. */
+    border: 1px solid transparent;
+    padding: 4px 8px;
     cursor: pointer;
     min-height: 0;
     white-space: nowrap;
 }
 
-.cde-menubar > button:hover:not(:disabled),
-.cde-menubar > button.open {
-    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+/*
+   Note the selector: the cascade buttons are wrapped in .menu-anchor so their pull-downs can be
+   positioned against them, so a direct child of .cde-menubar is the anchor, not the button.
+   window-menu-smoke.mjs reaches for them the same way.
+
+   No hover rule, on purpose. A Motif cascade button has no pointer-over state: it is either
+   armed or it is not, and it arms when its menu is posted. Lighting one up under the pointer
+   is a web habit, not a CDE one.
+
+   Armed, with CDE's enableEtchedInMenu, it is filled with the colour set's select colour and
+   given a shadow-IN relief - recessed, not raised. That is DrawShadow in CascadeBG.c choosing
+   XmSHADOW_IN, and the arm colour resolving to _XmSelectColorDefault.
+*/
+.cde-menubar .menu-anchor > button.open {
+    background: var(--menu-sel);
+    border-color: var(--menu-lo) var(--menu-hi) var(--menu-hi) var(--menu-lo);
 }
 
-.cde-menubar > button.open { background: var(--face-pressed); }
-
-.cde-menubar > button:disabled { opacity: 0.45; cursor: default; }
+.cde-menubar .menu-anchor > button:disabled { cursor: default; }
 
 /* Mnemonic underline, the way Motif marks the keyboard letter. */
 .cde-menubar u, .cde-dropdown u { text-decoration: underline; text-underline-offset: 2px; }
@@ -444,9 +670,9 @@ h1:focus { outline: none; }
     z-index: 60;
     min-width: 190px;
     padding: 3px;
-    background: var(--face);
-    border: 3px solid;
-    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+    background: var(--menu-face);
+    border: 1px solid;
+    border-color: var(--menu-hi) var(--menu-lo) var(--menu-lo) var(--menu-hi);
     box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
 }
 
@@ -458,17 +684,27 @@ h1:focus { outline: none; }
     text-align: left;
     font: inherit;
     font-size: 13px;
-    color: var(--fg);
+    color: var(--menu-fg);
     background: none;
-    border: 0;
-    padding: 6px 12px;
+    /* Reserved at rest so arming an item cannot shift the label by a pixel. */
+    border: 1px solid transparent;
+    padding: 5px 11px;
     cursor: pointer;
     white-space: nowrap;
 }
 
-.cde-dropdown button:hover:not(:disabled) { background: var(--accent); color: var(--accent-fg); }
-.cde-dropdown button:disabled { opacity: 0.45; cursor: not-allowed; }
-.cde-dropdown hr { border: 0; border-top: 1px solid var(--shadow); margin: 3px 0; }
+/*
+   An armed menu item gets both halves of what BorderHighlight does in PushBG.c under
+   enableEtchedInMenu: filled with the select colour, and relieved shadow-IN. The fill alone
+   reads as a web menu; it is the recessed edge that makes it read as Motif.
+*/
+.cde-dropdown button:hover:not(:disabled) {
+    background: var(--menu-sel);
+    border-color: var(--menu-lo) var(--menu-hi) var(--menu-hi) var(--menu-lo);
+}
+
+.cde-dropdown button:disabled { cursor: not-allowed; }
+.cde-dropdown hr { border: 0; border-top: 1px solid var(--menu-lo); border-bottom: 1px solid var(--menu-hi); margin: 3px 0; }
 
 .cde-dropdown .accel { float: right; margin-left: 20px; opacity: 0.7; }
 
@@ -482,8 +718,8 @@ h1:focus { outline: none; }
     width: 250px;
     min-height: 420px;
     background: var(--face);
-    padding: 4px;
-    border: 3px solid;
+    padding: var(--frame-border);
+    border: var(--frame-bevel) solid;
     border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
 }
 
@@ -495,9 +731,9 @@ h1:focus { outline: none; }
     list-style: none;
     margin: 0;
     padding: 8px 0 16px;
-    border: 2px solid;
+    border: 1px solid;
     border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
-    background: var(--panel-bg);
+    background: var(--cs8-sel);
 }
 
 .app-nav li { margin: 4px 12px; }
@@ -509,7 +745,9 @@ h1:focus { outline: none; }
     text-transform: uppercase;
     padding: 6px 4px 4px;
     margin: 14px 12px 4px;
-    color: var(--accent);
+    /* Plain foreground, like the other headings: the accent is a title-bar colour, and against
+       the front panel's own colour set it is not guaranteed to separate from it. */
+    color: var(--fg);
     border-bottom: 1px solid var(--shadow);
 }
 
@@ -521,7 +759,7 @@ h1:focus { outline: none; }
     text-align: center;
     padding: 8px 12px;
     background: var(--face);
-    border: 3px solid;
+    border: 2px solid;
     border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
 }
 
@@ -584,22 +822,82 @@ h1:focus { outline: none; }
     height: auto !important;
 }
 
-/* Motif puts a resize grip in the bottom-right corner of the frame. */
-.cw-grip {
+/*
+   dtwm's eight resize pieces, laid over the border strip the join lines already divide. The
+   corners are L-shaped rather than square: a square would cover the client area's top-left
+   corner and swallow clicks meant for it. clip-path shapes the hit area as well as the paint,
+   so the arms are exactly what responds.
+
+   They sit below the menu catcher at 30, so clicking a frame while a pull-down is open
+   dismisses the menu rather than starting a resize.
+*/
+.cw-handle {
     position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 18px;
-    height: 18px;
-    cursor: nwse-resize;
-    background: var(--face);
-    border: 2px solid;
-    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
-    z-index: 40;
+    z-index: 20;
 }
 
-.cde-window.maximised .cw-grip,
-.cde-window.shaded .cw-grip { display: none; }
+.cw-h-n, .cw-h-s {
+    left: var(--corner);
+    right: var(--corner);
+    height: var(--frame-border);
+    cursor: ns-resize;
+}
+
+.cw-h-n { top: 0; }
+.cw-h-s { bottom: 0; }
+
+.cw-h-w, .cw-h-e {
+    top: var(--corner);
+    bottom: var(--corner);
+    width: var(--frame-border);
+    cursor: ew-resize;
+}
+
+.cw-h-w { left: 0; }
+.cw-h-e { right: 0; }
+
+.cw-h-nw, .cw-h-ne, .cw-h-sw, .cw-h-se {
+    width: var(--corner);
+    height: var(--corner);
+}
+
+.cw-h-nw, .cw-h-se { cursor: nwse-resize; }
+.cw-h-ne, .cw-h-sw { cursor: nesw-resize; }
+
+.cw-h-nw {
+    left: 0;
+    top: 0;
+    clip-path: polygon(0 0, 100% 0, 100% var(--frame-border),
+                       var(--frame-border) var(--frame-border), var(--frame-border) 100%, 0 100%);
+}
+
+.cw-h-ne {
+    right: 0;
+    top: 0;
+    clip-path: polygon(0 0, 100% 0, 100% 100%,
+                       calc(100% - var(--frame-border)) 100%,
+                       calc(100% - var(--frame-border)) var(--frame-border), 0 var(--frame-border));
+}
+
+.cw-h-sw {
+    left: 0;
+    bottom: 0;
+    clip-path: polygon(0 0, var(--frame-border) 0,
+                       var(--frame-border) calc(100% - var(--frame-border)),
+                       100% calc(100% - var(--frame-border)), 100% 100%, 0 100%);
+}
+
+.cw-h-se {
+    right: 0;
+    bottom: 0;
+    clip-path: polygon(100% 0, 100% 100%, 0 100%,
+                       0 calc(100% - var(--frame-border)),
+                       calc(100% - var(--frame-border)) calc(100% - var(--frame-border)),
+                       calc(100% - var(--frame-border)) 0);
+}
+
+.cde-window.maximised .cw-handle,
+.cde-window.shaded .cw-handle { display: none; }
 
 /* A window being dragged should not let the pointer select text underneath it. */
 body.cw-dragging { user-select: none; cursor: move; }
@@ -612,7 +910,7 @@ body.cw-resizing { user-select: none; cursor: nwse-resize; }
         width: auto !important;
         height: auto !important;
     }
-    .cw-grip { display: none; }
+    .cw-handle { display: none; }
     .window-layer .cde-titlebar { cursor: default; }
 }
 
@@ -622,11 +920,8 @@ body.cw-resizing { user-select: none; cursor: nwse-resize; }
     font: inherit;
     color: var(--fg);
     background: var(--face);
-    border: 3px solid var(--face);
-    border-top-color: var(--highlight);
-    border-left-color: var(--highlight);
-    border-right-color: var(--shadow);
-    border-bottom-color: var(--shadow);
+    border: 1px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
     padding: 5px 14px;
     cursor: pointer;
     user-select: none;
@@ -835,7 +1130,7 @@ label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
     margin-bottom: 4px;
 }
 
-.stat .stat-value { font-size: 22px; font-weight: bold; color: var(--accent); }
+.stat .stat-value { font-size: 22px; font-weight: bold; color: var(--accent-text); }
 .stat .stat-unit { font-size: 13px; font-weight: normal; color: var(--fg); margin-left: 3px; }
 .stat .stat-note { font-size: 11px; color: var(--label-fg); margin-top: 3px; }
 
@@ -914,14 +1209,40 @@ label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
     font-size: 13px;
     color: var(--fg);
     background: none;
-    border: 0;
-    padding: 6px 10px;
+    /* Reserved at rest so arming cannot shift the label. */
+    border: 1px solid transparent;
+    padding: 5px 9px;
     cursor: pointer;
 }
 
-.cde-contextmenu button:hover:not(:disabled) { background: var(--accent); color: var(--accent-fg); }
-.cde-contextmenu button:disabled { opacity: 0.45; cursor: not-allowed; }
-.cde-contextmenu hr { border: 0; border-top: 1px solid var(--shadow); margin: 3px 0; }
+/* A popup menu is a menu: armed items get the select colour and a shadow-IN relief, the same
+   as a pull-down's. */
+.cde-contextmenu button:hover:not(:disabled) {
+    background: var(--face-pressed);
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+.cde-contextmenu button:disabled { cursor: not-allowed; }
+
+.cde-contextmenu hr {
+    border: 0;
+    border-top: 1px solid var(--shadow);
+    border-bottom: 1px solid var(--highlight);
+    margin: 3px 0;
+}
+
+/*
+   Motif does not fade an insensitive label, it draws it through a 50% stipple - a checkerboard
+   of the foreground, one pixel on and one off (_XmGetInsensitiveStippleGC). Masking the text
+   with a 2px checkerboard is the same thing, and it is why a greyed-out CDE menu entry looks
+   dithered rather than merely pale.
+*/
+.cde-dropdown button:disabled,
+.cde-contextmenu button:disabled,
+.cde-menubar .menu-anchor > button:disabled {
+    mask-image: repeating-conic-gradient(#000 0% 25%, #0000 0% 50%);
+    mask-size: 2px 2px;
+}
 
 /* ------------------------------------------------------------------ dialogs */
 
@@ -980,7 +1301,7 @@ label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
 
 .event-log .row { display: flex; gap: 8px; padding: 1px 0; align-items: baseline; }
 .event-log .time { color: var(--label-fg); flex: none; }
-.event-log .cat { color: var(--accent); flex: none; min-width: 62px; }
+.event-log .cat { color: var(--accent-text); flex: none; min-width: 62px; }
 .event-log .msg { overflow-wrap: anywhere; }
 .event-log .row.warning .msg { color: var(--warn-fg); }
 .event-log .row.error .msg { color: var(--danger-fg); font-weight: bold; }
@@ -1001,7 +1322,8 @@ label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
 
 /* The terminal fills its floating window; the frame below is the standalone page. */
 .terminal-window > .window-content {
-    background: #12141a;
+    /* A console is a text area, which is colour set 4's job in CDE. */
+    background: var(--field-bg);
     display: flex;
     flex-direction: column;
 }
@@ -1019,15 +1341,155 @@ label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
 }
 
 .terminal-frame {
-    background: #000;
-    border: 3px solid var(--shadow);
-    border-right-color: var(--highlight);
-    border-bottom-color: var(--highlight);
+    /* xterm paints its own ground; this shows only in the moment before it does. */
+    background: var(--field-bg);
+    border: 2px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
     padding: 4px;
     height: min(70vh, 640px);
 }
 
 .terminal-frame > div { width: 100%; height: 100%; }
+
+
+/* --------------------------------------------------------------- appearance */
+
+/*
+   The Style Manager's colour dialog: palettes down one side, backdrops down the other. Both
+   previews are drawn from real values - the swatches are the palette's eight colour sets with
+   their own shadows, and each backdrop tile is rendered in whichever palette is selected - so
+   what is on screen is what choosing it would give.
+*/
+
+.appearance-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+@container appmain (min-width: 820px) {
+    .appearance-cols { grid-template-columns: minmax(0, 320px) minmax(0, 1fr); }
+}
+
+.appearance-heading {
+    margin: 0 0 8px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg);
+}
+
+.palette-list {
+    max-height: 420px;
+    overflow-y: auto;
+    padding: 3px;
+    background: var(--field-bg);
+    border: 1px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+.palette-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 6px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--cs4-fg);
+    text-align: left;
+    background: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+
+.palette-row:hover { border-color: var(--cs4-ts) var(--cs4-bs) var(--cs4-bs) var(--cs4-ts); }
+
+/* The chosen row is armed, which in Motif means the select colour and a reversed relief. */
+.palette-row.chosen {
+    background: var(--cs4-sel);
+    border-color: var(--cs4-bs) var(--cs4-ts) var(--cs4-ts) var(--cs4-bs);
+}
+
+.palette-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.palette-swatches { display: flex; flex: none; }
+
+.swatch {
+    display: inline-block;
+    width: 13px;
+    height: 15px;
+    border: 1px solid transparent;
+}
+
+.backdrop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.backdrop-tile {
+    display: block;
+    padding: 3px;
+    font: inherit;
+    font-size: 11px;
+    color: var(--fg);
+    background: var(--face);
+    border: 1px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+    cursor: pointer;
+}
+
+.backdrop-tile.chosen {
+    background: var(--face-pressed);
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+/* Tiled at its natural size rather than stretched, so the preview shows the repeat the desktop
+   would actually get. */
+.backdrop-swatch {
+    display: block;
+    height: 64px;
+    background-color: var(--desktop-ground);
+    background-repeat: repeat;
+    border: 1px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+.backdrop-name {
+    display: block;
+    padding-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pool-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 2px 12px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 6px;
+    background: var(--field-bg);
+    border: 1px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+.pool-list.disabled { opacity: 0.5; }
+
+.pool-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: 13px;
+    color: var(--cs4-fg);
+}
+
+.pool-item .swatch { width: 15px; height: 15px; flex: none; }
 
 /* ------------------------------------------------------------------ badges */
 

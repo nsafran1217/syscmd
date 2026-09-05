@@ -1,3 +1,13 @@
+@inject SysCmd.Server.Theming.ThemeResolver Theme
+@inject IHttpContextAccessor Http
+
+@{
+    // Resolved here, on the server, so the very first paint is already in the chosen palette.
+    // A random theme is re-rolled per document load, which is what makes it change on reload and
+    // hold steady while navigating inside the app.
+    var theme = Theme.Resolve(Http.HttpContext);
+}
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +17,7 @@
     <title>syscmd</title>
     <link rel="stylesheet" href="lib/xterm/xterm.css" />
     <link rel="stylesheet" href="css/cde.css" />
-    <link rel="stylesheet" href="css/theme-dec.css" />
+    <link id="cde-theme" rel="stylesheet" href="@($"/cde/theme.css?{theme.Query}")" />
     <link rel="icon" href="img/icons/Dtterm.m.bmp" />
     <HeadOutlet />
 </head>

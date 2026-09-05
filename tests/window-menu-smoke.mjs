@@ -110,6 +110,33 @@ await p.mouse.click(term.x + term.width - 30, term.y + term.height - 30);
 await p.waitForTimeout(400);
 ok(await win.locator('.cde-menubar .cde-dropdown').count() === 0, 'clicking away still dismisses');
 
+console.log('\n[the menu bar behaves like a Motif menu bar]');
+
+// A Motif cascade button has no pointer-over state at all: it is armed or it is not. Hovering an
+// idle bar must post nothing and light nothing up.
+const editBtn = win.locator('.cde-menubar > .menu-anchor > button', { hasText: 'Edit' });
+await editBtn.hover();
+await p.waitForTimeout(350);
+ok(await win.locator('.cde-menubar .cde-dropdown').count() === 0, 'hovering an idle bar posts nothing');
+ok(!await editBtn.evaluate(el => el.classList.contains('open')), 'and arms nothing');
+
+// Once a menu is posted, sliding along the bar posts the next one without a second click.
+await win.locator('.cde-menubar > .menu-anchor > button', { hasText: 'Window' }).click();
+await p.waitForTimeout(300);
+await editBtn.hover();
+await p.waitForTimeout(400);
+const tracked = (await win.locator('.cde-menubar .cde-dropdown button').allInnerTexts())
+  .map(i => i.trim().replace(/\s+/g, ' '));
+ok(tracked.some(i => /^Copy/.test(i)), 'the pointer tracks along a posted bar', tracked.join(' | '));
+
+// ...and the click that follows the pointer must not unpost what it just posted.
+await editBtn.click();
+await p.waitForTimeout(350);
+ok(await win.locator('.cde-menubar .cde-dropdown').count() === 1,
+   'clicking the entry the pointer tracked onto leaves it posted');
+await p.mouse.click(term.x + term.width - 30, term.y + term.height - 30);
+await p.waitForTimeout(350);
+
 // A title-bar box has to keep working with a menu open.
 await win.locator('.cde-menubar > .menu-anchor > button', { hasText: 'Send' }).click();
 await p.waitForTimeout(350);

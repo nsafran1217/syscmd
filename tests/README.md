@@ -45,6 +45,16 @@ confirms it is powered down, that a machine which never confirms keeps its outle
 overrides and is logged, and that killing a job leaves untouched outlets alone. It takes a few
 minutes, because it waits out a real confirmation timeout.
 
+`theme-smoke.mjs` covers the palettes and backdrops. It is the only suite that checks colour, and
+it does so against numbers with an independent source rather than against whatever the code emits:
+colours sampled from the real CDE screenshots in `docs/website_reference`. It checks that Motif's
+colour derivation still turns Crimson's stored backgrounds into the shadows those screenshots show,
+that a backdrop is stencilled in the colour set's background over its bottom shadow, that picking a
+palette repaints without a reload and survives one, that random mode stays inside the chosen pool,
+and that the frame still draws its eight corner joins. Worth knowing: every other browser suite
+*captures* screenshots but never compares them, so without this one a colour regression is
+invisible.
+
 `power-smoke.mjs` points the simulated PDU at a watts load OID instead of a current one and checks
 the two readings agree, that watts are used verbatim rather than scaled by voltage, and that
 energy keeps accruing. It needs no browser.
@@ -63,6 +73,7 @@ SHOTS=./shots node tests/window-smoke.mjs     # window decorations, menus, drag,
 SHOTS=./shots node tests/behaviour-smoke.mjs  # navigation, confirmation toggle, killing a job
 SHOTS=./shots node tests/window-rollup-smoke.mjs  # roll up, restore and resize a console window
 node tests/power-smoke.mjs                    # watts vs current readings and energy accrual
+SHOTS=./shots node tests/theme-smoke.mjs      # CDE palettes, backdrops and the Motif colour maths
 SHOTS=./shots node tests/config-edit-smoke.mjs    # machine editor: credentials and DNS lookup
 SHOTS=./shots node tests/dashboard-smoke.mjs      # outlet filter, outlet-only power-on, machine controls
 SHOTS=./shots node tests/log-column-smoke.mjs      # the event log lines up and scrolls with the other windows

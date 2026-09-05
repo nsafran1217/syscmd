@@ -32,6 +32,39 @@ The simulator is worth using first — it exercises every code path, including a
 (`alpha1000`) that deliberately ignores shutdown requests so you can watch the confirmation
 timeout leave its outlet on.
 
+### In Docker
+
+```bash
+docker build -t syscmd .
+
+# The fake lab. No volumes, no hardware: config.sim ships in the image.
+docker run --rm -p 5080:5080 syscmd --simulate
+
+# Real hardware.
+docker run -d --name syscmd -p 5080:5080 \
+  -v /srv/syscmd/config:/app/config \
+  -v /srv/syscmd/data:/app/data \
+  -e TZ=America/Toronto \
+  syscmd
+```
+
+Arguments after the image name reach the app, which is how `--simulate` gets in.
+
+Three things are worth knowing:
+
+- **Both mounts need to be writable by uid 1654**, the non-root `app` user the image runs as.
+  `data` is obvious — the event log and power history live there — but `config` is written too,
+  because the configuration pages save YAML back through `ConfigStore`. `chown -R 1654:1654` the
+  host directories, or run with `--user`.
+- **Copy the templates in before the first real run**: `cp -r config.example/* /srv/syscmd/config/`.
+  Started against an empty `config`, the app says so and shows an empty dashboard rather than
+  inventing a lab.
+- **Set `TZ`** if the event log's timestamps should read in local time; a container is UTC otherwise.
+
+Bridge networking is enough — syscmd only listens on 5080, and reaches the PDU over SNMP and the
+management processors over telnet outbound. Publish that port only on a network you trust: see
+[Security](#security).
+
 ## How it is put together
 
 ```
@@ -243,9 +276,11 @@ rather than being painted on:
   change the text size and reconnect the session.
 
 `CdeWindow` is the single component behind all of this, and `CdeMenu` / `CdeMenuItem` describe a
-pull-down. Colours live entirely in CSS custom properties in `wwwroot/css/theme-dec.css`, so a
-second theme (sun, sgi, hp) is one palette file with no changes to `cde.css` or any component —
-which the image-based approach could not offer, since each theme needed its own slice set.
+pull-down. No colour is written down in `cde.css` at all: the stylesheet is generated from a real
+CDE palette file, so a second theme is eight numbers in a `.dp` file with no changes to `cde.css` or
+any component — which the image-based approach could not offer, since each theme needed its own
+slice set. All 41 of CDE's palettes and 28 of its backdrops ship, and both are pickable at
+`/config/appearance`.
 
 ### Console windows
 

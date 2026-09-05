@@ -2,6 +2,7 @@
 
 @inject ConfigStore Config
 @inject EventLog Events
+@inject SysCmd.Core.Theming.PaletteStore Palettes
 
 <PageTitle>Configuration</PageTitle>
 
@@ -52,6 +53,11 @@
             <div class="stat-label">Console servers</div>
             <div class="stat-value">@Config.Current.ConsoleServers.Count</div>
             <div class="stat-note">serial port mappings</div>
+        </a>
+        <a class="stat" href="/config/appearance" style="text-decoration:none;">
+            <div class="stat-label">Appearance</div>
+            <div class="stat-value">@Palettes.All.Count</div>
+            <div class="stat-note">CDE palettes and backdrops</div>
         </a>
         <a class="stat" href="/config/raw" style="text-decoration:none;">
             <div class="stat-label">YAML files</div>
@@ -152,7 +158,16 @@
         var current = Config.Current.App;
         _app = new AppConfig
         {
-            Site = new SiteConfig { Name = current.Site.Name, Theme = current.Site.Theme },
+            // Copied field by field, so anything Appearance owns has to be carried across too or
+            // saving from this page would silently reset it.
+            Site = new SiteConfig
+            {
+                Name = current.Site.Name,
+                Theme = current.Site.Theme,
+                Backdrop = current.Site.Backdrop,
+                BackdropColorSet = current.Site.BackdropColorSet,
+                RandomThemes = [.. current.Site.RandomThemes],
+            },
             Power = new PowerConfig
             {
                 PollIntervalSeconds = current.Power.PollIntervalSeconds,

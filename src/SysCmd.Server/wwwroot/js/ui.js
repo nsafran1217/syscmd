@@ -30,6 +30,33 @@ window.syscmdUi = {
         try { window.localStorage.setItem(key, value); } catch (e) { /* not worth surfacing */ }
     },
 
+    // Theme preferences ride in cookies rather than local storage. App.razor is rendered on the
+    // server, so a cookie is readable before the first byte goes out and the first paint is already
+    // in the right palette; local storage would give a flash of the wrong theme on every load.
+    readCookie: function (name) {
+        const match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/\./g, '\\.') + '=([^;]*)'));
+        return match ? decodeURIComponent(match[1]) : null;
+    },
+
+    writeCookie: function (name, value) {
+        const year = 60 * 60 * 24 * 365;
+        document.cookie = name + '=' + encodeURIComponent(value) + ';path=/;max-age=' + year + ';SameSite=Lax';
+    },
+
+    // Repoints the generated stylesheet so a palette can be tried on without a reload. The link
+    // carries an id precisely so this can find it.
+    setThemeHref: function (href) {
+        const link = document.getElementById('cde-theme');
+        if (!link) return;
+        // xterm holds its own copy of its colours, so open consoles have to be told separately
+        // once the new sheet has actually applied.
+        link.addEventListener('load', function once() {
+            link.removeEventListener('load', once);
+            if (window.syscmdConsole) window.syscmdConsole.retheme();
+        });
+        link.setAttribute('href', href);
+    },
+
     isWideViewport: function () {
         return window.matchMedia('(min-width: 900px)').matches;
     },
@@ -67,11 +94,12 @@ window.syscmdUi = {
         el.dataset.cwInit = '1';
 
         const handle = el.querySelector('[data-cw-drag]');
-        const grip = el.querySelector('[data-cw-resize]');
+        const grips = el.querySelectorAll('[data-cw-resize]');
 
-        let mode = null, startX = 0, startY = 0, originX = 0, originY = 0, originW = 0, originH = 0;
+        const MIN_W = 280, MIN_H = 140;
+        let mode = null, edge = '', startX = 0, startY = 0, originX = 0, originY = 0, originW = 0, originH = 0;
 
-        const onDown = (e, which) => {
+        const onDown = (e, which, which_edge) => {
             // Ignore the title-bar boxes; only the bar itself drags.
             if (which === 'move' && e.target.closest('.cw-box')) return;
             if (el.classList.contains('maximised')) return;
@@ -79,6 +107,7 @@ window.syscmdUi = {
             if (e.button !== undefined && e.button !== 0) return;
 
             mode = which;
+            edge = which_edge || 'se';
             const p = e.touches ? e.touches[0] : e;
             startX = p.clientX;
             startY = p.clientY;
@@ -101,8 +130,27 @@ window.syscmdUi = {
                 el.style.left = x + 'px';
                 el.style.top = y + 'px';
             } else {
-                el.style.width = Math.max(280, originW + dx) + 'px';
-                el.style.height = Math.max(140, originH + dy) + 'px';
+                // Which edges the gesture owns comes from the handle's name, so a CDE frame
+                // resizes from any of its eight pieces rather than only the bottom-right corner.
+                // Dragging a top or left edge moves the origin as well as the size, and the
+                // movement is clamped so the far edge stays put once the minimum is reached.
+                let x = originX, y = originY, w = originW, h = originH;
+
+                if (edge.includes('e')) w = Math.max(MIN_W, originW + dx);
+                if (edge.includes('s')) h = Math.max(MIN_H, originH + dy);
+                if (edge.includes('w')) {
+                    w = Math.max(MIN_W, originW - dx);
+                    x = originX + (originW - w);
+                }
+                if (edge.includes('n')) {
+                    h = Math.max(MIN_H, originH - dy);
+                    y = originY + (originH - h);
+                }
+
+                el.style.left = x + 'px';
+                el.style.top = y + 'px';
+                el.style.width = w + 'px';
+                el.style.height = h + 'px';
             }
             e.preventDefault();
         };
@@ -129,10 +177,11 @@ window.syscmdUi = {
             handle.addEventListener('mousedown', (e) => onDown(e, 'move'));
             handle.addEventListener('touchstart', (e) => onDown(e, 'move'), { passive: false });
         }
-        if (grip) {
-            grip.addEventListener('mousedown', (e) => onDown(e, 'resize'));
-            grip.addEventListener('touchstart', (e) => onDown(e, 'resize'), { passive: false });
-        }
+        grips.forEach((grip) => {
+            const which = grip.getAttribute('data-cw-resize') || 'se';
+            grip.addEventListener('mousedown', (e) => onDown(e, 'resize', which));
+            grip.addEventListener('touchstart', (e) => onDown(e, 'resize', which), { passive: false });
+        });
 
         window.addEventListener('mousemove', onMove);
         window.addEventListener('touchmove', onMove, { passive: false });

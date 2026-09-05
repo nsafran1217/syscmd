@@ -86,16 +86,32 @@ const after = await win.boundingBox();
 ok(Math.abs(after.x - before.x - 160) < 12 && Math.abs(after.y - before.y - 110) < 12,
    'title bar drags the window', `moved ${Math.round(after.x - before.x)},${Math.round(after.y - before.y)}`);
 
-// Resize by the grip.
+// dtwm splits the resize border into eight pieces, and each one resizes from its own side.
+ok(await win.locator('.cw-handle').count() === 8, 'the frame has all eight resize pieces');
+
+// Resize by the south-east corner. The corner handles are L-shaped, so the grab has to be on an
+// arm: the middle of the handle's bounding box is clipped away and belongs to the client area.
 const g = await win.locator('.cw-grip').boundingBox();
-await p.mouse.move(g.x + 8, g.y + 8);
+await p.mouse.move(g.x + g.width - 3, g.y + g.height - 3);
 await p.mouse.down();
-await p.mouse.move(g.x + 8 + 130, g.y + 8 + 90, { steps: 10 });
+await p.mouse.move(g.x + g.width - 3 + 130, g.y + g.height - 3 + 90, { steps: 10 });
 await p.mouse.up();
 await p.waitForTimeout(400);
 const resized = await win.boundingBox();
 ok(resized.width > after.width + 100 && resized.height > after.height + 60,
-   'grip resizes the window', `${Math.round(resized.width)}x${Math.round(resized.height)}`);
+   'south-east corner resizes the window', `${Math.round(resized.width)}x${Math.round(resized.height)}`);
+
+// Dragging a west edge has to move the left edge as well as the width, or the window would grow
+// away from the pointer instead of following it.
+const w = await win.locator('.cw-h-w').boundingBox();
+await p.mouse.move(w.x + 2, w.y + w.height / 2);
+await p.mouse.down();
+await p.mouse.move(w.x + 2 - 90, w.y + w.height / 2, { steps: 10 });
+await p.mouse.up();
+await p.waitForTimeout(400);
+const widened = await win.boundingBox();
+ok(Math.abs(widened.x - (resized.x - 90)) < 12 && widened.width > resized.width + 70,
+   'west edge resizes from the left', `x ${Math.round(widened.x)} w ${Math.round(widened.width)}`);
 
 await p.screenshot({ path: `${shots}/window-moved.png` });
 
