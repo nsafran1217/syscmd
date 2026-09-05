@@ -7,6 +7,7 @@ using SysCmd.Core.Power;
 using SysCmd.Server.Api;
 using SysCmd.Server.Components;
 using SysCmd.Server.Console;
+using SysCmd.Server.Theming;
 using SysCmd.Simulator;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,6 +32,14 @@ if (!simulate && !Directory.Exists(configRoot))
 }
 
 builder.Services.AddSysCmdCore(configRoot, dataRoot);
+
+// CDE palettes and backdrops ship in wwwroot; the lab may add its own beside its YAML.
+builder.Services.AddSysCmdTheming(
+    Path.Combine(builder.Environment.WebRootPath ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot"), "cde"),
+    configRoot);
+builder.Services.AddSingleton<ThemeResolver>();
+builder.Services.AddHttpContextAccessor();
+
 builder.Services.AddSingleton<ConsoleBridge>();
 
 // Scoped to the browser circuit: the console windows one person has open are theirs.
@@ -67,6 +76,7 @@ app.UseAntiforgery();
 app.UseWebSockets();
 
 app.MapSysCmdApi();
+app.MapSysCmdTheme();
 
 // The browser terminal talks to a real telnet session through here.
 app.Map("/ws/console/{machineId}", async (

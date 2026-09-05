@@ -4,6 +4,27 @@
 window.syscmdConsole = (function () {
     const instances = new Map();
 
+    // The console is a text area, which is colour set 4's job in CDE, so its colours come from
+    // the same custom properties every other surface reads. Reading them here rather than
+    // hardcoding a palette is what lets a theme switch reach inside the terminals too.
+    function themeColors() {
+        const css = getComputedStyle(document.documentElement);
+        const value = (name, fallback) => (css.getPropertyValue(name) || '').trim() || fallback;
+        return {
+            background: value('--cs4-bg', '#12141a'),
+            foreground: value('--cs4-fg', '#e6e6e6'),
+            cursor: value('--cs1-bg', '#eda870'),
+            selectionBackground: value('--cs4-sel', '#4e5566')
+        };
+    }
+
+    // Repaints every open console when the palette changes. xterm keeps its own copy of the
+    // theme, so nothing short of handing it a new one will do.
+    function retheme() {
+        const theme = themeColors();
+        instances.forEach((entry) => { entry.term.options.theme = theme; });
+    }
+
     function make(elementId, wsUrl) {
         const element = document.getElementById(elementId);
         if (!element) return null;
@@ -14,13 +35,7 @@ window.syscmdConsole = (function () {
             fontFamily: "'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace",
             fontSize: 13,
             scrollback: 5000,
-            // Match the DEC theme rather than a plain black terminal.
-            theme: {
-                background: '#12141a',
-                foreground: '#e6e6e6',
-                cursor: '#eda870',
-                selectionBackground: '#4e5566'
-            }
+            theme: themeColors()
         });
 
         const fit = new FitAddon.FitAddon();
@@ -159,6 +174,9 @@ window.syscmdConsole = (function () {
 
         closeAll: function () {
             for (const id of [...instances.keys()]) this.close(id);
-        }
+        },
+
+        // Called after the theme stylesheet is swapped, so open consoles follow the palette.
+        retheme: retheme
     };
 })();

@@ -18,7 +18,27 @@ public sealed class AppConfig
 public sealed class SiteConfig
 {
     public string Name { get; set; } = "Home Lab";
-    public string Theme { get; set; } = "dec";
+
+    /// <summary>
+    /// The lab's default CDE palette, by the name of a .dp file. A browser that has made its own
+    /// choice overrides this; this is what everyone else, and every first visit, gets.
+    /// </summary>
+    public string Theme { get; set; } = "Default";
+
+    /// <summary>Default backdrop, by the name of a file in the backdrops directory.</summary>
+    public string Backdrop { get; set; } = "Toronto";
+
+    /// <summary>
+    /// Which colour set tints the backdrop. dtwm cycles workspaces through 3, 5, 6 and 7; with one
+    /// workspace there is one choice to make, so it is exposed rather than fixed.
+    /// </summary>
+    public int BackdropColorSet { get; set; } = 3;
+
+    /// <summary>
+    /// Palettes to choose between when a browser asks for a random theme. Empty means every palette
+    /// that loaded is fair game.
+    /// </summary>
+    public List<string> RandomThemes { get; set; } = [];
 }
 
 public sealed class PowerConfig

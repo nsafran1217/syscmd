@@ -1,0 +1,303 @@
+@page "/config/appearance"
+
+@using SysCmd.Core.Theming
+@using SysCmd.Server.Theming
+
+@inject ConfigStore Config
+@inject EventLog Events
+@inject PaletteStore Palettes
+@inject BackdropStore Backdrops
+@inject IJSRuntime JS
+
+<PageTitle>Appearance</PageTitle>
+
+@* CDE's Style Manager put colour and backdrop in one dialog, and picked live rather than on OK.
+   This does the same: choosing repaints the page immediately and only the browser's own cookie
+   changes, so nobody has to save anything to try a palette on. *@
+
+<CdeWindow Title="Appearance - Colour">
+    <h1 style="margin:0 0 4px; font-size:20px;">Appearance</h1>
+    <p class="muted" style="font-size:12px; margin:0 0 12px;">
+        @Palettes.All.Count CDE palettes and @Backdrops.Names.Count backdrops. A palette stores only
+        a background for each of its eight colour sets; every shadow, highlight and text colour below
+        is derived from it by Motif's own colour calculation.
+    </p>
+
+    @if (Palettes.Problems.Count > 0)
+    {
+        <div class="cde-panel">
+            <h3>Palettes that would not load</h3>
+            @foreach (var problem in Palettes.Problems)
+            {
+                <div class="mono" style="font-size:12px;">@problem</div>
+            }
+        </div>
+    }
+
+    <div class="appearance-cols">
+        <div>
+            <h3 class="appearance-heading">Palette</h3>
+            <div class="palette-list" role="listbox" aria-label="Palette">
+                @foreach (var palette in Palettes.All)
+                {
+                    var chosen = palette.Name == _palette && !_random;
+                    <button type="button" class="palette-row @(chosen ? "chosen" : "")"
+                            role="option" aria-selected="@chosen"
+                            @onclick="() => ChoosePaletteAsync(palette.Name)">
+                        <span class="palette-name">@palette.Name</span>
+                        <span class="palette-swatches">
+                            @for (var id = 1; id <= 8; id++)
+                            {
+                                var set = palette.Set(id);
+                                <span class="swatch" title="@($"Colour set {id}: {set.Bg.Hex}")"
+                                      style="background:@set.Bg.Hex; border-color:@set.TopShadow.Hex @set.BottomShadow.Hex @set.BottomShadow.Hex @set.TopShadow.Hex;"></span>
+                            }
+                        </span>
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div>
+            <h3 class="appearance-heading">Backdrop</h3>
+            <div class="backdrop-grid">
+                @foreach (var name in Backdrops.Names)
+                {
+                    var chosen = name == _backdrop;
+                    <button type="button" class="backdrop-tile @(chosen ? "chosen" : "")"
+                            title="@name" aria-pressed="@chosen"
+                            @onclick="() => ChooseBackdropAsync(name)">
+                        @* Rendered in the palette that is selected, so the preview is truthful. *@
+                        <span class="backdrop-swatch"
+                              style="background-image:url('/cde/backdrop.png?p=@(Uri.EscapeDataString(_palette))&b=@(Uri.EscapeDataString(name))&cs=@_colorSet');"></span>
+                        <span class="backdrop-name">@name</span>
+                    </button>
+                }
+            </div>
+
+            <h3 class="appearance-heading">Backdrop colour set</h3>
+            <p class="muted" style="font-size:12px; margin:0 0 6px;">
+                dtwm tints each workspace's backdrop with a different colour set, cycling through
+                these four. The pattern is stencilled in the set's background over its bottom shadow.
+            </p>
+            <div class="btn-row">
+                @foreach (var id in CdeColorSet.WorkspaceBackdrops)
+                {
+                    <button type="button" class="cde-btn small @(id == _colorSet ? "pressed" : "")"
+                            @onclick="() => ChooseColorSetAsync(id)">Set @id</button>
+                }
+            </div>
+        </div>
+    </div>
+</CdeWindow>
+
+<CdeWindow Title="Appearance - Random">
+    <div class="inline-toggle" style="margin-bottom:10px;">
+        <input type="checkbox" id="random-toggle" checked="@_random" @onchange="ToggleRandomAsync" />
+        <label for="random-toggle" style="display:inline; margin:0;">
+            Use a different palette on every page load
+        </label>
+    </div>
+
+    <p class="muted" style="font-size:12px; margin:0 0 10px;">
+        The palette is chosen when the page is served, so it changes on a reload and holds steady
+        while you move around the app. Tick the palettes to draw from; with none ticked, any of them
+        can come up.
+    </p>
+
+    <div class="pool-list @(_random ? "" : "disabled")">
+        @foreach (var palette in Palettes.All)
+        {
+            var inPool = _pool.Contains(palette.Name);
+            <label class="pool-item">
+                <input type="checkbox" checked="@inPool" disabled="@(!_random)"
+                       @onchange="() => TogglePoolAsync(palette.Name)" />
+                <span class="swatch" style="background:@palette.Set(CdeColorSet.Active).Bg.Hex;"></span>
+                @palette.Name
+            </label>
+        }
+    </div>
+</CdeWindow>
+
+<CdeWindow Title="Appearance - Lab default">
+    <p style="margin:0 0 10px;">
+        What you have chosen so far is remembered in this browser only. Saving writes it to
+        <span class="mono">app.yaml</span> as the default for anyone who has not chosen for themselves.
+    </p>
+
+    <p class="muted" style="font-size:12px;">
+        Current: palette <span class="mono">@(_random ? "random" : _palette)</span>,
+        backdrop <span class="mono">@_backdrop</span>, colour set <span class="mono">@_colorSet</span>.
+    </p>
+
+    <div class="btn-row">
+        <button class="cde-btn" @onclick="SaveDefaultAsync">Save as lab default</button>
+        <button class="cde-btn" @onclick="ResetToLabAsync">Use the lab default here</button>
+        @if (_saved is { } msg)
+        {
+            <span class="muted">@msg</span>
+        }
+    </div>
+</CdeWindow>
+
+@code {
+    private string _palette = PaletteStore.DefaultName;
+    private string _backdrop = BackdropStore.NoBackdrop;
+    private int _colorSet = CdeColorSet.WorkspaceBackdrops[0];
+    private bool _random;
+    private HashSet<string> _pool = new(StringComparer.OrdinalIgnoreCase);
+    private string? _saved;
+    private bool _restored;
+
+    protected override void OnInitialized()
+    {
+        // The server-rendered pass has no access to the browser's cookies, so start from the lab
+        // default and correct it once the circuit is up. Both are legitimate values, so the worst
+        // case is that the list highlights the lab's choice for a moment.
+        var site = Config.Current.App.Site;
+        _palette = Palettes.Get(site.Theme).Name;
+        _backdrop = Backdrops.Contains(site.Backdrop) ? site.Backdrop : BackdropStore.NoBackdrop;
+        _colorSet = CdeColorSet.IsBackdropSet(site.BackdropColorSet)
+            ? site.BackdropColorSet
+            : CdeColorSet.WorkspaceBackdrops[0];
+        _pool = new HashSet<string>(site.RandomThemes.Where(Palettes.Contains), StringComparer.OrdinalIgnoreCase);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _restored || !RendererInfo.IsInteractive) return;
+        _restored = true;
+
+        try
+        {
+            var palette = await JS.InvokeAsync<string?>("syscmdUi.readCookie", ThemeResolver.PaletteCookie);
+            if (string.Equals(palette, ThemeResolver.RandomPalette, StringComparison.OrdinalIgnoreCase))
+            {
+                _random = true;
+            }
+            else if (Palettes.Contains(palette))
+            {
+                _palette = palette!;
+            }
+
+            var pool = await JS.InvokeAsync<string?>("syscmdUi.readCookie", ThemeResolver.PoolCookie);
+            if (pool is not null)
+            {
+                _pool = new HashSet<string>(
+                    pool.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Where(Palettes.Contains),
+                    StringComparer.OrdinalIgnoreCase);
+            }
+
+            var backdrop = await JS.InvokeAsync<string?>("syscmdUi.readCookie", ThemeResolver.BackdropCookie);
+            if (Backdrops.Contains(backdrop)) _backdrop = backdrop!;
+
+            var colorSet = await JS.InvokeAsync<string?>("syscmdUi.readCookie", ThemeResolver.BackdropColorSetCookie);
+            if (int.TryParse(colorSet, out var id) && CdeColorSet.IsBackdropSet(id)) _colorSet = id;
+
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The browser went away mid-restore; nothing to recover.
+        }
+    }
+
+    private async Task ChoosePaletteAsync(string name)
+    {
+        _palette = name;
+        _random = false;
+        await ApplyAsync();
+    }
+
+    private async Task ChooseBackdropAsync(string name)
+    {
+        _backdrop = name;
+        await ApplyAsync();
+    }
+
+    private async Task ChooseColorSetAsync(int id)
+    {
+        _colorSet = id;
+        await ApplyAsync();
+    }
+
+    private async Task ToggleRandomAsync(ChangeEventArgs e)
+    {
+        _random = e.Value is true;
+        await ApplyAsync();
+    }
+
+    private async Task TogglePoolAsync(string name)
+    {
+        if (!_pool.Add(name)) _pool.Remove(name);
+        await ApplyAsync();
+    }
+
+    /// <summary>
+    /// Writes the choice to this browser's cookies and repoints the generated stylesheet, so the
+    /// page repaints without a reload. A random choice cannot be previewed - it is resolved when
+    /// the document is served - so the palette currently showing is left alone.
+    /// </summary>
+    private async Task ApplyAsync()
+    {
+        _saved = null;
+
+        try
+        {
+            await JS.InvokeVoidAsync("syscmdUi.writeCookie", ThemeResolver.PaletteCookie,
+                _random ? ThemeResolver.RandomPalette : _palette);
+            await JS.InvokeVoidAsync("syscmdUi.writeCookie", ThemeResolver.PoolCookie, string.Join(",", _pool));
+            await JS.InvokeVoidAsync("syscmdUi.writeCookie", ThemeResolver.BackdropCookie, _backdrop);
+            await JS.InvokeVoidAsync("syscmdUi.writeCookie", ThemeResolver.BackdropColorSetCookie, _colorSet.ToString());
+
+            if (!_random)
+            {
+                await JS.InvokeVoidAsync("syscmdUi.setThemeHref",
+                    $"/cde/theme.css?p={Uri.EscapeDataString(_palette)}&b={Uri.EscapeDataString(_backdrop)}&cs={_colorSet}");
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task ResetToLabAsync()
+    {
+        OnInitialized();
+        _random = false;
+        await ApplyAsync();
+        _saved = "Following the lab default in this browser.";
+    }
+
+    private Task SaveDefaultAsync()
+    {
+        var current = Config.Current.App;
+        var app = new AppConfig
+        {
+            Site = new SiteConfig
+            {
+                Name = current.Site.Name,
+                Theme = _random ? current.Site.Theme : _palette,
+                Backdrop = _backdrop,
+                BackdropColorSet = _colorSet,
+                RandomThemes = [.. _pool],
+            },
+            Power = current.Power,
+            Orchestration = current.Orchestration,
+        };
+
+        try
+        {
+            Config.SaveApp(app);
+            Events.Info("config", $"Lab default appearance set to {app.Site.Theme} / {app.Site.Backdrop}");
+            _saved = $"Saved at {DateTime.Now:HH:mm:ss}";
+        }
+        catch (Exception ex)
+        {
+            _saved = $"Could not save: {ex.Message}";
+        }
+
+        return Task.CompletedTask;
+    }
+}

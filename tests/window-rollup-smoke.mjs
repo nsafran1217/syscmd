@@ -54,9 +54,12 @@ ok(Math.abs(restored.height - original.height) < 8,
 console.log('\n[resizing still works after a roll-up]');
 const grip = await win.locator('.cw-grip').boundingBox();
 ok(!!grip, 'resize grip is present again');
-await p.mouse.move(grip.x + 8, grip.y + 8);
+// The corner handle is an L, so the grab has to be on an arm: the middle of its bounding box is
+// clipped away and belongs to the client area underneath.
+const gx = grip.x + grip.width - 3, gy = grip.y + grip.height - 3;
+await p.mouse.move(gx, gy);
 await p.mouse.down();
-await p.mouse.move(grip.x + 8 + 140, grip.y + 8 + 100, { steps: 10 });
+await p.mouse.move(gx + 140, gy + 100, { steps: 10 });
 await p.mouse.up();
 await p.waitForTimeout(500);
 const resized = await win.boundingBox();

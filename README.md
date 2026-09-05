@@ -243,9 +243,11 @@ rather than being painted on:
   change the text size and reconnect the session.
 
 `CdeWindow` is the single component behind all of this, and `CdeMenu` / `CdeMenuItem` describe a
-pull-down. Colours live entirely in CSS custom properties in `wwwroot/css/theme-dec.css`, so a
-second theme (sun, sgi, hp) is one palette file with no changes to `cde.css` or any component —
-which the image-based approach could not offer, since each theme needed its own slice set.
+pull-down. No colour is written down in `cde.css` at all: the stylesheet is generated from a real
+CDE palette file, so a second theme is eight numbers in a `.dp` file with no changes to `cde.css` or
+any component — which the image-based approach could not offer, since each theme needed its own
+slice set. All 41 of CDE's palettes and 28 of its backdrops ship, and both are pickable at
+`/config/appearance`.
 
 ### Console windows
 

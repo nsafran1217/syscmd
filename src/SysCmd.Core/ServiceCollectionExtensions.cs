@@ -6,6 +6,7 @@ using SysCmd.Core.Machines;
 using SysCmd.Core.Mp;
 using SysCmd.Core.Pdu;
 using SysCmd.Core.Power;
+using SysCmd.Core.Theming;
 
 namespace SysCmd.Core;
 
@@ -44,6 +45,25 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<MachinePowerService>();
         services.AddSingleton<GroupService>();
         services.AddSingleton<LabStatusService>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Register the CDE palettes and backdrops. Kept separate from AddSysCmdCore because where the
+    /// shipped assets live is a hosting question - the lab's own additions sit beside its YAML,
+    /// and win over anything of the same name.
+    /// </summary>
+    public static IServiceCollection AddSysCmdTheming(
+        this IServiceCollection services, string assetRoot, string configRoot)
+    {
+        string[] palettes = [Path.Combine(assetRoot, "palettes"), Path.Combine(configRoot, "palettes")];
+        string[] backdrops = [Path.Combine(assetRoot, "backdrops"), Path.Combine(configRoot, "backdrops")];
+
+        services.AddSingleton(sp => new PaletteStore(palettes,
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PaletteStore>>()));
+        services.AddSingleton(sp => new BackdropStore(backdrops,
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<BackdropStore>>()));
 
         return services;
     }

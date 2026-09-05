@@ -126,9 +126,16 @@
 
     @if (Floating)
     {
-        @* Always in the DOM: it is hidden by CSS while rolled up or maximised, because
-           removing it would discard the drag listeners bound to it. *@
-        <div class="cw-grip" data-cw-resize="1" title="Resize"></div>
+        @* dtwm splits the resize border into eight pieces - four corner handles and four edge
+           stretchers - and each one resizes from its own side. They are always in the DOM: hidden
+           by CSS while rolled up or maximised, because removing them would discard the drag
+           listeners bound to them. The south-east handle keeps the old cw-grip class so anything
+           that reached for the single corner grip still finds one. *@
+        @foreach (var edge in Edges)
+        {
+            <div class="cw-handle cw-h-@edge @(edge == "se" ? "cw-grip" : "")"
+                 data-cw-resize="@edge" title="Resize"></div>
+        }
     }
 
     @* Any click elsewhere dismisses an open pull-down, the way a menu bar should behave.
@@ -143,6 +150,9 @@
 
 
 @code {
+    /// <summary>The eight frame pieces, in the order dtwm generates them.</summary>
+    private static readonly string[] Edges = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+
     [Parameter, EditorRequired] public string Title { get; set; } = "";
     [Parameter] public string? Class { get; set; }
     [Parameter] public string? Style { get; set; }
