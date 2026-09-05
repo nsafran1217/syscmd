@@ -1,0 +1,24 @@
+id: rx2660
+name: HP rx2660
+description: Itanium 2 server running OpenVMS
+tags: [ia64, vms]
+
+pdu:
+  id: sim-pdu
+  outlet: 2
+
+mp:
+  type: hp-mp
+  host: 127.0.0.1
+  port: 2302
+  username: Admin
+  password: Admin
+
+serial:
+  server: sim-console
+  port: 2
+
+addresses:
+  - label: primary
+    ip: 10.0.0.32
+    hostname: rx2660.lab

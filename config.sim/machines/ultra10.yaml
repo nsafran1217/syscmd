@@ -1,0 +1,26 @@
+id: ultra10
+name: Sun Ultra 10
+description: UltraSPARC IIi workstation running Solaris 9
+tags: [solaris, sparc]
+
+pdu:
+  id: sim-pdu
+  outlet: 3
+
+# This one is reached through the terminal server rather than a direct MP address.
+mp:
+  type: sun-alom
+  via:
+    server: sim-console
+    port: 3
+  username: admin
+  password: admin
+
+serial:
+  server: sim-console
+  port: 3
+
+addresses:
+  - label: primary
+    ip: 10.0.0.33
+    hostname: ultra10.lab

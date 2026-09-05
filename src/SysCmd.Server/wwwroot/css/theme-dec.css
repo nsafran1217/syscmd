@@ -1,0 +1,54 @@
+/* ---------------------------------------------------------------------------
+   DEC theme. Colours sampled from the reference site's decibm chrome:
+   #999999 window face, #d1d1d2 highlight, #4e4e4e shadow, #686f82 terminal
+   interior, #eda870 accent. Swapping this file and the slice directory is all a
+   second theme (sun, sgi, hp) needs.
+   --------------------------------------------------------------------------- */
+
+:root {
+    color-scheme: dark;
+
+    /* chrome */
+    --face: #999999;
+    --face-hover: #a6a6a6;
+    --face-pressed: #8a8a8a;
+    --highlight: #d1d1d2;
+    --shadow: #4e4e4e;
+
+    /* surfaces */
+    --desktop: url(../img/bgs/water.png) left top repeat, #4b4f5a;
+    --terminal: #686f82;
+    --panel-bg: #5c6274;
+    --field-bg: #4b4f5a;
+    --log-bg: #3f434e;
+    --table-head: #5c6274;
+    --table-hover: #737b90;
+    --rule: #b6b6b6;
+
+    /* text */
+    --fg: #ffffff;
+    --label-fg: #dcdfe6;
+    --title-fg: #ffffff;
+    --field-fg: #ffffff;
+    --link: #ffca7b;
+
+    /* accents and state */
+    --accent: #eda870;
+    --accent-fg: #3a2a1c;
+    /* Bevel pair for the accent-coloured title bar and its boxes. */
+    --accent-hi: #f7d9c0;
+    --accent-lo: #7d593b;
+    --warn-fg: #ffca7b;
+    --danger-fg: #ff9a8a;
+
+    --led-on: #57d06a;
+    --led-off: #333744;
+    --led-unknown: #9aa0ad;
+    --led-busy: #eda870;
+
+    --code-bg: #4b4f5a;
+    --code-fg: #ffc074;
+
+    --mono: 'DejaVu Sans Mono', 'Liberation Mono', Menlo, Consolas, monospace;
+
+}

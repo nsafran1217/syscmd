@@ -1,0 +1,135 @@
+@page "/jobs"
+@inherits LivePage
+
+@inject JobQueue Jobs
+
+<PageTitle>Jobs</PageTitle>
+
+<CdeWindow Title="Jobs">
+    <div class="spread" style="margin-bottom:10px;">
+        <h1 style="margin:0; font-size:20px;">Jobs</h1>
+        <span class="muted">@_jobs.Count(j => !j.IsComplete) running</span>
+    </div>
+
+    <p class="muted" style="font-size:12px;">
+        Every power operation runs as a job so slow management processors never block the UI.
+        Jobs are held in memory; their outcomes are in the event log.
+    </p>
+
+    @if (_jobs.Count == 0)
+    {
+        <p class="muted">Nothing has run yet.</p>
+    }
+    else
+    {
+        @foreach (var job in _jobs)
+        {
+            <div class="cde-panel">
+                <div class="spread">
+                    <div>
+                        <strong>@job.Title</strong>
+                        @if (job.Forced)
+                        {
+                            <span class="badge warn">forced</span>
+                        }
+                        @if (job.ParentJobId is not null)
+                        {
+                            <span class="badge">group member</span>
+                        }
+                        <div class="muted" style="font-size:11px;">
+                            @job.Id &middot; @job.Target &middot; @job.CreatedAt.ToString("HH:mm:ss")
+                            &middot; @job.Elapsed.TotalSeconds.ToString("F0")s
+                        </div>
+                    </div>
+                    <div class="btn-row nowrap">
+                        @if (job.CanCancel)
+                        {
+                            <button class="cde-btn small danger" @onclick="() => _stopping = job">Stop</button>
+                        }
+                        <span class="badge @StatusClass(job)">
+                            @(job.CancelRequested && !job.IsComplete ? "Stopping" : job.Status.ToString())
+                        </span>
+                    </div>
+                </div>
+
+                @if (job.Error is { } error)
+                {
+                    <p style="margin:8px 0 0; color:var(--danger-fg);">@error</p>
+                }
+
+                @if (job.Progress.Count > 0)
+                {
+                    <details style="margin-top:8px;" open="@(!job.IsComplete)">
+                        <summary class="muted" style="cursor:pointer; font-size:12px;">
+                            @job.Progress.Count steps &mdash; @job.CurrentStep
+                        </summary>
+                        <div class="event-log" style="max-height:200px; margin-top:6px;">
+                            @foreach (var step in job.Progress)
+                            {
+                                <div class="row">
+                                    <span class="time">@step.Timestamp.ToString("HH:mm:ss")</span>
+                                    <span class="msg">@step.Message</span>
+                                </div>
+                            }
+                        </div>
+                    </details>
+                }
+            </div>
+        }
+    }
+</CdeWindow>
+
+<ConfirmDialog Visible="_stopping is not null"
+               Title="Stop job"
+               ConfirmLabel="Stop it"
+               Destructive="true"
+               OnConfirm="StopAsync"
+               OnCancel="() => { _stopping = null; }">
+    @if (_stopping is { } job)
+    {
+        <p>Stop <strong>@job.Title</strong>?</p>
+        <p class="muted">
+            Whatever it has already done stands. Anything it had not yet reached is left alone -
+            in particular an outlet it was waiting to switch off stays on, so nothing is cut
+            without the machine having confirmed it was powered down.
+        </p>
+    }
+</ConfirmDialog>
+
+@code {
+    private Job? _stopping;
+
+    private IReadOnlyList<Job> _jobs = [];
+
+    protected override TimeSpan RefreshInterval => TimeSpan.FromSeconds(2);
+
+    protected override Task LoadAsync(CancellationToken ct)
+    {
+        _jobs = Jobs.All(60);
+        return Task.CompletedTask;
+    }
+
+    protected override void Subscribe() => Jobs.JobChanged += OnJobChanged;
+    protected override void Unsubscribe() => Jobs.JobChanged -= OnJobChanged;
+
+    private void OnJobChanged(Job job)
+    {
+        _jobs = Jobs.All(60);
+        RequestRender();
+    }
+
+    private Task StopAsync()
+    {
+        var job = _stopping;
+        _stopping = null;
+        if (job is not null) Jobs.Cancel(job.Id);
+        return RefreshNowAsync();
+    }
+
+    private static string StatusClass(Job job) => job.Status switch
+    {
+        JobStatus.Failed => "error",
+        JobStatus.Cancelled => "warn",
+        _ => "",
+    };
+}

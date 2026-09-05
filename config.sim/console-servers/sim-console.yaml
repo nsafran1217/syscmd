@@ -1,0 +1,9 @@
+id: sim-console
+name: Simulated Terminal Server
+host: 127.0.0.1
+# Physical serial port number -> TCP port that reaches it.
+ports:
+  1: 2401
+  2: 2402
+  3: 2303   # the Ultra 10's ALOM is wired straight to this port
+  4: 2404

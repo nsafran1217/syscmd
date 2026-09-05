@@ -1,0 +1,13 @@
+id: vax3100
+name: VAXstation 3100
+description: No management processor - outlet control only
+tags: [vms, vax]
+
+pdu:
+  id: sim-pdu
+  outlet: 5
+
+addresses:
+  - label: primary
+    ip: 10.0.0.35
+    hostname: vax3100.lab

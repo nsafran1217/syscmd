@@ -1,0 +1,49 @@
+# Sun Advanced Lights Out Manager (ALOM) - a flat "sc>" shell rather than nested menus.
+name: Sun ALOM
+transport: telnet
+defaultPort: 23
+
+timeouts:
+  expectSeconds: 20
+  connectSeconds: 10
+
+prompt: "sc>"
+
+# ALOM serves a single session at a time, so syscmd holds it exclusively.
+allowsConcurrentSessions: false
+
+login:
+  - expect: "login:"
+    send: "{username}"
+  - expect: "password:"
+    send: "{password}"
+
+tasks:
+  poweron:
+    - expect: "sc>"
+      send: "poweron"
+    - expect: "sc>"
+
+  # -y answers the confirmation prompt; drop -f to request a graceful shutdown.
+  poweroff:
+    - expect: "sc>"
+      send: "poweroff -y"
+    - expect: "sc>"
+      timeoutSeconds: 60
+
+  reset:
+    - expect: "sc>"
+      send: "reset -y"
+    - expect: "sc>"
+      timeoutSeconds: 60
+
+  status:
+    - expect: "sc>"
+      send: "showplatform"
+    - expect: "sc>"
+      match:
+        on: "/running/i"
+        off: "/powered off|standby/i"
+
+logout:
+  - send: "logout"

@@ -1,0 +1,190 @@
+@page "/power"
+@inherits LivePage
+
+@inject PowerHistoryStore History
+@inject PowerSummaryCache Summary
+@inject PduService Pdus
+@inject ConfigStore Config
+
+<PageTitle>Power</PageTitle>
+
+<CdeWindow Title="Power and Cost">
+    <div class="spread" style="margin-bottom:12px;">
+        <h1 style="margin:0; font-size:20px;">Power and Cost</h1>
+        <div class="btn-row">
+            <select @bind="_hours" @bind:after="RefreshNowAsync">
+                <option value="6">Last 6 hours</option>
+                <option value="24">Last 24 hours</option>
+                <option value="168">Last 7 days</option>
+                <option value="720">Last 30 days</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="stat-row">
+        <div class="stat">
+            <div class="stat-label">Now</div>
+            <div class="stat-value">@_summary.CurrentWatts.ToString("F0")<span class="stat-unit">W</span></div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Today</div>
+            <div class="stat-value">@Money(_summary.TodayCost)</div>
+            <div class="stat-note">@_summary.TodayKwh.ToString("F2") kWh</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">This month</div>
+            <div class="stat-value">@Money(_summary.MonthCost)</div>
+            <div class="stat-note">@_summary.MonthKwh.ToString("F1") kWh</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Projected month</div>
+            <div class="stat-value">@Money(ProjectedMonthCost)</div>
+            <div class="stat-note">at the current rate</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Rate</div>
+            <div class="stat-value" style="font-size:18px;">
+                @Config.Current.App.Power.CostPerKwh.ToString("F3")
+            </div>
+            <div class="stat-note">per kWh &middot; <a href="/config">change</a></div>
+        </div>
+    </div>
+</CdeWindow>
+
+<CdeWindow Title="@($"Draw - last {_hours} hours")">
+    <h2 style="margin:0 0 10px; font-size:16px;">Recorded Draw</h2>
+
+    @if (_series.Count == 0)
+    {
+        <p class="muted">
+            No readings in this window yet. Samples are written every
+            @Config.Current.App.Power.PollIntervalSeconds seconds once a PDU reports its load.
+        </p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            @* Inline SVG keeps this dependency-free and works offline like the rest of the app. *@
+            <svg viewBox="0 0 @ChartWidth @ChartHeight" width="100%" height="220"
+                 preserveAspectRatio="none" role="img"
+                 aria-label="@($"Power draw over the last {_hours} hours, peaking at {_peak:F0} watts")">
+                <rect x="0" y="0" width="@ChartWidth" height="@ChartHeight" fill="var(--log-bg)" />
+
+                @foreach (var gridline in new[] { 0.25, 0.5, 0.75 })
+                {
+                    var y = (ChartHeight * gridline).ToString("F1", CultureInfo.InvariantCulture);
+                    <line x1="0" y1="@y" x2="@ChartWidth" y2="@y" stroke="var(--shadow)" stroke-width="1" />
+                }
+
+                <polyline points="@Points" fill="none" stroke="var(--accent)" stroke-width="2"
+                          vector-effect="non-scaling-stroke" />
+            </svg>
+        </div>
+
+        <div class="spread muted" style="font-size:11px; margin-top:4px;">
+            <span>@_series[0].Timestamp.ToString("dd MMM HH:mm")</span>
+            <span>peak @_peak.ToString("F0") W &middot; mean @_mean.ToString("F0") W</span>
+            <span>@_series[^1].Timestamp.ToString("dd MMM HH:mm")</span>
+        </div>
+    }
+</CdeWindow>
+
+<CdeWindow Title="PDUs">
+    <h2 style="margin:0 0 10px; font-size:16px;">Per-PDU Readings</h2>
+    <div class="table-scroll">
+        <table class="cde-table">
+            <thead><tr><th>PDU</th><th>State</th><th>Watts</th><th>Amps</th><th>Outlets on</th></tr></thead>
+            <tbody>
+                @foreach (var pdu in _pdus)
+                {
+                    <tr>
+                        <td>@pdu.Name</td>
+                        <td>
+                            @if (pdu.Reachable)
+                            {
+                                <span class="badge">OK</span>
+                            }
+                            else
+                            {
+                                <span class="badge error">@pdu.Error</span>
+                            }
+                        </td>
+                        <td>@(pdu.Watts?.ToString("F0") ?? "-")</td>
+                        <td>@(pdu.Amps?.ToString("F2") ?? "-")</td>
+                        <td>@pdu.OnCount / @pdu.Outlets.Count</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</CdeWindow>
+
+@code {
+    private const int ChartWidth = 1000;
+    private const int ChartHeight = 200;
+
+    private int _hours = 24;
+    private PowerSummary _summary = new(0, 0, 0, 0, 0, "USD");
+    private IReadOnlyList<PowerSample> _series = [];
+    private IReadOnlyList<PduStatus> _pdus = [];
+    private double _peak, _mean;
+
+    protected override TimeSpan RefreshInterval => TimeSpan.FromSeconds(15);
+
+    protected override async Task LoadAsync(CancellationToken ct)
+    {
+        _summary = Summary.Current();
+        _pdus = await Pdus.ReadAllAsync(ct);
+
+        var to = DateTimeOffset.Now;
+        var from = to.AddHours(-_hours);
+
+        // Sum concurrent readings across PDUs into a single whole-lab series.
+        _series = [.. History.Read(from, to)
+            .GroupBy(s => s.Timestamp)
+            .OrderBy(g => g.Key)
+            .Select(g => new PowerSample(g.Key, "all", g.Sum(s => s.Watts), g.Sum(s => s.Amps), g.First().Volts))];
+
+        _peak = _series.Count > 0 ? _series.Max(s => s.Watts) : 0;
+        _mean = _series.Count > 0 ? _series.Average(s => s.Watts) : 0;
+    }
+
+    /// <summary>Scale the series into the SVG viewBox, leaving headroom above the peak.</summary>
+    private string Points
+    {
+        get
+        {
+            if (_series.Count < 2) return "";
+
+            var start = _series[0].Timestamp.ToUnixTimeMilliseconds();
+            var span = Math.Max(1, _series[^1].Timestamp.ToUnixTimeMilliseconds() - start);
+            var ceiling = Math.Max(_peak * 1.1, 1);
+
+            return string.Join(' ', _series.Select(s =>
+            {
+                var x = (s.Timestamp.ToUnixTimeMilliseconds() - start) / (double)span * ChartWidth;
+                var y = ChartHeight - (s.Watts / ceiling * ChartHeight);
+                return string.Create(CultureInfo.InvariantCulture, $"{x:F1},{y:F1}");
+            }));
+        }
+    }
+
+    /// <summary>Extrapolate the month's spend from what has been recorded so far.</summary>
+    private decimal ProjectedMonthCost
+    {
+        get
+        {
+            var now = DateTime.Now;
+            var daysElapsed = now.Day - 1 + now.TimeOfDay.TotalDays;
+            if (daysElapsed < 0.05) return _summary.MonthCost;
+            var daysInMonth = DateTime.DaysInMonth(now.Year, now.Month);
+            return Math.Round(_summary.MonthCost / (decimal)daysElapsed * daysInMonth, 2);
+        }
+    }
+
+    private string Money(decimal amount)
+    {
+        var symbol = _summary.Currency switch { "USD" => "$", "GBP" => "£", "EUR" => "€", _ => "" };
+        return symbol.Length > 0 ? $"{symbol}{amount:F2}" : $"{amount:F2} {_summary.Currency}";
+    }
+}

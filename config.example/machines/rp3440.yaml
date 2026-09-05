@@ -1,0 +1,26 @@
+# A machine with a direct MP address and a separate serial console.
+id: rp3440
+name: HP rp3440
+description: PA-RISC 8800 server running HP-UX 11.31
+tags: [hpux, parisc]
+
+pdu:
+  id: rack1
+  outlet: 1
+
+mp:
+  # Must match a file in mp-types/.
+  type: hp-mp
+  host: 10.0.0.71
+  # port: 23          # optional; defaults to the type's defaultPort
+  username: Admin
+  password: CHANGEME
+
+serial:
+  server: lantronix1
+  port: 3
+
+addresses:
+  - label: primary
+    ip: 10.0.0.31
+    hostname: rp3440.lab

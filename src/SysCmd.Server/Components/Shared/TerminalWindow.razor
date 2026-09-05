@@ -1,0 +1,281 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject ConsoleWindowManager Windows
+
+<CdeWindow Title="@Window.Title"
+           ElementId="@Window.WindowElementId"
+           Class="terminal-window"
+           Style="@Geometry"
+           Floating="true"
+           Active="@Active"
+           Menus="_menus"
+           HelpMenu="_help"
+           Shaded="Window.Shaded"
+           ShadedChanged="OnShadedChanged"
+           Maximised="Window.Maximised"
+           MaximisedChanged="OnMaximisedChanged"
+           OnClose="Close"
+           OnActivate="Activate">
+
+    <div class="terminal-host" id="@Window.TerminalElementId"></div>
+
+    @if (_notice is { } notice)
+    {
+        <div class="terminal-notice">@notice</div>
+    }
+</CdeWindow>
+
+@code {
+    [Parameter, EditorRequired] public ConsoleWindow Window { get; set; } = default!;
+    [Parameter] public bool Active { get; set; }
+
+    /// <summary>Floor for the restored size, so a window can never come back unusable.</summary>
+    private const int MinWidth = 280;
+    private const int MinHeight = 160;
+
+    private DotNetObjectReference<TerminalWindow>? _self;
+    private IReadOnlyList<CdeMenu> _menus = [];
+    private CdeMenu? _help;
+    private string? _notice;
+    private bool _disposed;
+
+    /// <summary>Control sequences the menu can send, written as escapes to stay readable.</summary>
+    private static class Keys
+    {
+        public const string Return = "\r";
+        public const string CtrlB = "\u0002";
+        public const string CtrlC = "\u0003";
+        public const string CtrlD = "\u0004";
+        public const string Escape = "\u001b";
+        public const string Break = "\u001c";
+    }
+
+    private string Geometry =>
+        $"left:{Window.X}px; top:{Window.Y}px; width:{Window.Width}px; height:{Window.Height}px; z-index:{Window.ZIndex};";
+
+    protected override void OnInitialized() => BuildMenus();
+
+    private void BuildMenus()
+    {
+        _menus =
+        [
+            new CdeMenu
+            {
+                Label = "Window",
+                MnemonicIndex = 0,
+                Items =
+                [
+                    CdeMenuItem.Of("Roll up", () => OnShadedChanged(!Window.Shaded)),
+                    CdeMenuItem.Of("Maximise", () => OnMaximisedChanged(!Window.Maximised)),
+                    CdeMenuItem.Separator,
+                    CdeMenuItem.Of("Close", Close, "Alt+F4"),
+                ],
+            },
+            new CdeMenu
+            {
+                Label = "Edit",
+                MnemonicIndex = 0,
+                Items =
+                [
+                    CdeMenuItem.Of("Copy", () => CopyAsync(), "selection, or all"),
+                    CdeMenuItem.Of("Paste", () => PasteAsync()),
+                    CdeMenuItem.Separator,
+                    CdeMenuItem.Of("Select all", () => Invoke("selectAll")),
+                    CdeMenuItem.Of("Clear scrollback", () => Invoke("clear")),
+                ],
+            },
+            new CdeMenu
+            {
+                Label = "Send",
+                MnemonicIndex = 0,
+                Items =
+                [
+                    CdeMenuItem.Of("Return", () => Send(Keys.Return)),
+                    CdeMenuItem.Of("Escape", () => Send(Keys.Escape), "^["),
+                    CdeMenuItem.Separator,
+                    CdeMenuItem.Of("Interrupt", () => Send(Keys.CtrlC), "^C"),
+                    CdeMenuItem.Of("End of file", () => Send(Keys.CtrlD), "^D"),
+                    CdeMenuItem.Of("MP main menu", () => Send(Keys.CtrlB), "^B"),
+                    CdeMenuItem.Of("Break", () => Send(Keys.Break), "^\\"),
+                ],
+            },
+            new CdeMenu
+            {
+                Label = "Options",
+                MnemonicIndex = 0,
+                Items =
+                [
+                    CdeMenuItem.Of("Larger text", () => FontAsync(1)),
+                    CdeMenuItem.Of("Smaller text", () => FontAsync(-1)),
+                    CdeMenuItem.Separator,
+                    CdeMenuItem.Of("Refit to window", () => Invoke("refit")),
+                    CdeMenuItem.Of("Reconnect", ReconnectAsync),
+                ],
+            },
+        ];
+
+        _help = new CdeMenu
+        {
+            Label = "Help",
+            MnemonicIndex = 0,
+            Items =
+            [
+                CdeMenuItem.Of("About this console", ShowHelp),
+            ],
+        };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!RendererInfo.IsInteractive || Window.Attached) return;
+        Window.Attached = true;
+
+        _self = DotNetObjectReference.Create(this);
+
+        try
+        {
+            await JS.InvokeVoidAsync("syscmdUi.initWindow", Window.WindowElementId, _self);
+            await JS.InvokeVoidAsync("syscmdConsole.open", Window.TerminalElementId, SocketUrl());
+        }
+        catch (JSDisconnectedException) { /* the browser went away */ }
+    }
+
+    private string SocketUrl()
+    {
+        var baseUri = new Uri(Nav.BaseUri);
+        var scheme = baseUri.Scheme == "https" ? "wss" : "ws";
+        var target = Window.Target == ConsoleTarget.Mp ? "mp" : "serial";
+        return $"{scheme}://{baseUri.Authority}/ws/console/{Uri.EscapeDataString(Window.MachineId)}?target={target}";
+    }
+
+    /// <summary>Called from JavaScript when a drag or resize finishes, so the state stays in sync.</summary>
+    [JSInvokable]
+    public void OnGeometryChanged(int x, int y, int width, int height)
+    {
+        Window.X = x;
+        Window.Y = y;
+
+        // Zero means the frame was rolled up or maximised, so its box is not the size to keep.
+        if (width > 0) Window.Width = Math.Max(width, MinWidth);
+        if (height > 0) Window.Height = Math.Max(height, MinHeight);
+    }
+
+    private Task Activate()
+    {
+        Windows.Focus(Window.Id);
+        return Task.CompletedTask;
+    }
+
+    private async Task OnShadedChanged(bool shaded)
+    {
+        Window.Shaded = shaded;
+        Windows.Notify();
+        if (!shaded) await Invoke("refit");
+    }
+
+    private async Task OnMaximisedChanged(bool maximised)
+    {
+        Window.Maximised = maximised;
+        Windows.Notify();
+        // The frame changes size after this render, so refit once the browser has laid it out.
+        await Task.Yield();
+        await Invoke("refit");
+    }
+
+    private async Task Close()
+    {
+        await SafeCloseTerminalAsync();
+        Windows.Close(Window.Id);
+    }
+
+    private Task Send(string text) => Invoke("send", text);
+
+    private async Task Invoke(string method, params object?[] args)
+    {
+        try
+        {
+            var all = new object?[args.Length + 1];
+            all[0] = Window.TerminalElementId;
+            args.CopyTo(all, 1);
+            await JS.InvokeVoidAsync($"syscmdConsole.{method}", all);
+        }
+        catch (JSDisconnectedException) { /* nothing to do */ }
+    }
+
+    private async Task CopyAsync()
+    {
+        var copied = await Call<bool>("copy");
+        await NoticeAsync(copied
+            ? "Copied to the clipboard."
+            : "The browser refused clipboard access; select the text and copy it by hand.");
+    }
+
+    private async Task PasteAsync()
+    {
+        var pasted = await Call<bool>("paste");
+        if (!pasted) await NoticeAsync("The browser refused clipboard access; use the keyboard to paste.");
+    }
+
+    private async Task FontAsync(int delta)
+    {
+        var size = await Call<int>("setFontSize", delta);
+        if (size > 0) await NoticeAsync($"Text size {size}px.");
+    }
+
+    private async Task ReconnectAsync()
+    {
+        await NoticeAsync("Reconnecting...");
+        await Invoke("close");
+        try
+        {
+            await JS.InvokeVoidAsync("syscmdConsole.open", Window.TerminalElementId, SocketUrl());
+        }
+        catch (JSDisconnectedException) { /* nothing to do */ }
+    }
+
+    private Task ShowHelp() => NoticeAsync(
+        "Type straight into the terminal. The Send menu carries the control keys, and the port " +
+        "allows one session at a time, so a power job will report it busy while this is open.");
+
+    private async Task<T> Call<T>(string method, params object?[] args)
+    {
+        try
+        {
+            var all = new object?[args.Length + 1];
+            all[0] = Window.TerminalElementId;
+            args.CopyTo(all, 1);
+            return await JS.InvokeAsync<T>($"syscmdConsole.{method}", all);
+        }
+        catch (JSDisconnectedException) { return default!; }
+    }
+
+    /// <summary>Show a transient line under the terminal; it clears itself.</summary>
+    private async Task NoticeAsync(string message)
+    {
+        _notice = message;
+        StateHasChanged();
+        await Task.Delay(4000);
+        if (_disposed || _notice != message) return;
+        _notice = null;
+        StateHasChanged();
+    }
+
+    private async Task SafeCloseTerminalAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("syscmdConsole.close", Window.TerminalElementId);
+            await JS.InvokeVoidAsync("syscmdUi.disposeWindow", Window.WindowElementId);
+        }
+        catch (JSDisconnectedException) { /* already gone */ }
+        catch (InvalidOperationException) { /* torn down before interop was available */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        await SafeCloseTerminalAsync();
+        _self?.Dispose();
+    }
+}

@@ -1,0 +1,137 @@
+@page "/config/raw"
+
+@inject ConfigStore Config
+@inject EventLog Events
+
+<PageTitle>YAML Files - Configuration</PageTitle>
+
+<CdeWindow Title="Configuration - YAML Files">
+    <div class="spread" style="margin-bottom:10px;">
+        <h1 style="margin:0; font-size:20px;">YAML Files</h1>
+        <a class="cde-btn small" href="/config">Back</a>
+    </div>
+
+    <p class="muted" style="font-size:12px;">
+        Direct access to every file under <span class="mono">@Config.Paths.Root</span>. This is the
+        way to edit PDU driver definitions and management-processor scripts, and the only editor
+        that preserves comments.
+    </p>
+
+    <div style="display:grid; grid-template-columns:minmax(200px,260px) minmax(0,1fr); gap:14px; align-items:start;">
+        <div class="cde-panel" style="margin:0;">
+            <h3>Files</h3>
+            @foreach (var folder in Files.GroupBy(f => Path.GetDirectoryName(f) is { Length: > 0 } d ? d : "."))
+            {
+                <div class="muted" style="font-size:11px; margin:8px 0 3px;">@(folder.Key == "." ? "(root)" : folder.Key)</div>
+                @foreach (var file in folder)
+                {
+                    <div>
+                        <button class="cde-btn small" style="width:100%; text-align:left; margin-bottom:3px;"
+                                @onclick="() => Open(file)">
+                            @Path.GetFileName(file)
+                        </button>
+                    </div>
+                }
+            }
+        </div>
+
+        <div>
+            @if (_path is null)
+            {
+                <p class="muted">Select a file to edit it.</p>
+            }
+            else
+            {
+                <div class="spread" style="margin-bottom:6px;">
+                    <strong class="mono">@_path</strong>
+                    @if (_message is { } msg)
+                    {
+                        <span class="muted">@msg</span>
+                    }
+                </div>
+
+                <textarea rows="26" style="width:100%;" spellcheck="false" @bind="_text"></textarea>
+
+                <div class="btn-row" style="margin-top:8px;">
+                    <button class="cde-btn" @onclick="SaveAsync">Save file</button>
+                    <button class="cde-btn" @onclick="() => Open(_path!)">Reload from disk</button>
+                </div>
+
+                @if (_fileIssues.Count > 0)
+                {
+                    <div class="cde-panel" style="margin-top:12px;">
+                        <h3>Problems with this file</h3>
+                        @foreach (var issue in _fileIssues)
+                        {
+                            <div>
+                                <span class="badge @(issue.Severity == ConfigIssueSeverity.Error ? "error" : "warn")">
+                                    @issue.Severity
+                                </span>
+                                @issue.Message
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</CdeWindow>
+
+@code {
+    private string? _path;
+    private string _text = "";
+    private string? _message;
+
+    /// <summary>Relative paths so they display cleanly and stay inside the config root.</summary>
+    private List<string> Files =>
+        Directory.Exists(Config.Paths.Root)
+            ? [.. Directory.GetFiles(Config.Paths.Root, "*.yaml", SearchOption.AllDirectories)
+                .Select(f => Path.GetRelativePath(Config.Paths.Root, f))
+                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)]
+            : [];
+
+    private List<ConfigIssue> _fileIssues = [];
+
+    private void Open(string relativePath)
+    {
+        try
+        {
+            _path = relativePath;
+            _text = Config.ReadRaw(relativePath);
+            _message = null;
+            RefreshIssues();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Could not read: {ex.Message}";
+        }
+    }
+
+    private Task SaveAsync()
+    {
+        if (_path is null) return Task.CompletedTask;
+        try
+        {
+            Config.WriteRaw(_path, _text);
+            Events.Info("config", $"{_path} edited from the GUI");
+            RefreshIssues();
+            _message = _fileIssues.Any(i => i.Severity == ConfigIssueSeverity.Error)
+                ? "Saved, but the file has problems"
+                : $"Saved at {DateTime.Now:HH:mm:ss}";
+        }
+        catch (Exception ex)
+        {
+            _message = $"Could not save: {ex.Message}";
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Match issues to this file by name; issues are reported with a folder/file label.</summary>
+    private void RefreshIssues()
+    {
+        var normalised = _path?.Replace(Path.DirectorySeparatorChar, '/');
+        _fileIssues = normalised is null
+            ? []
+            : [.. Config.Current.Issues.Where(i => i.File.Replace('\\', '/') == normalised)];
+    }
+}

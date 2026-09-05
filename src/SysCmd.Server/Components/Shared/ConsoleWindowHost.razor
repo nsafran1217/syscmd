@@ -1,0 +1,25 @@
+@* Renders every open console window. Lives in the layout rather than a page so a session
+   survives navigating around the app. *@
+@implements IDisposable
+@inject ConsoleWindowManager Windows
+
+@if (Windows.Windows.Count > 0)
+{
+    <div class="window-layer">
+        @foreach (var window in Windows.Windows)
+        {
+            @* Keyed so Blazor keeps each terminal's DOM when the collection re-orders. *@
+            <TerminalWindow @key="window.Id" Window="window" Active="@(Top?.Id == window.Id)" />
+        }
+    </div>
+}
+
+@code {
+    private ConsoleWindow? Top => Windows.Top;
+
+    protected override void OnInitialized() => Windows.Changed += OnChanged;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Windows.Changed -= OnChanged;
+}

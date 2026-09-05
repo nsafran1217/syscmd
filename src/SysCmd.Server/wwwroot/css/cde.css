@@ -1,0 +1,1064 @@
+/* ---------------------------------------------------------------------------
+   CDE chrome: window frames, beveled controls, menus, tables.
+   Every colour and image here comes from a custom property so a second theme
+   is just a new palette file - see theme-dec.css.
+   --------------------------------------------------------------------------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { height: 100%; }
+
+body {
+    margin: 0;
+    min-height: 100%;
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande',
+                 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+    font-size: 14px;
+    color: var(--fg);
+    background: var(--desktop);
+    image-rendering: pixelated;
+}
+
+a { color: var(--link); }
+
+/* Routing focuses the page heading so screen readers announce it. A heading is not a
+   control anyone tabs to, so the ring is pure noise - and Chromium still treats this
+   programmatic focus as focus-visible on a fresh load. */
+h1:focus { outline: none; }
+
+/* Text content inside frames should not be pixel-snapped. */
+.window-content, .cde-btn, .cde-table, input, select, textarea { image-rendering: auto; }
+
+/* --------------------------------------------------------------- page layout */
+
+/*
+   The navigation is a hamburger panel at every width. Three states drive it:
+     nav-auto    - nobody has chosen yet, so follow the viewport
+     nav-open    - explicitly shown, and it stays shown until hidden again
+     nav-closed  - explicitly hidden
+   Auto is what the server renders, so the first paint is right at any size with
+   no JavaScript and no flash before the stored preference is read.
+*/
+
+.app-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    /* Clears the fixed top strip. */
+    padding-top: 44px;
+}
+
+.app-nav { display: none; }
+
+.app-shell.nav-open .app-nav { display: flex; }
+
+@media (min-width: 900px) {
+    .app-shell.nav-auto { grid-template-columns: 250px minmax(0, 1fr); }
+    .app-shell.nav-auto .app-nav { display: flex; }
+    .app-shell.nav-open { grid-template-columns: 250px minmax(0, 1fr); }
+}
+
+/* Below the breakpoint an open panel is a drawer over the content, not a column. */
+@media (max-width: 899px) {
+    /* Starts below the pinned strip so the toggle that opened it stays reachable. */
+    .app-shell.nav-open .app-nav {
+        position: fixed;
+        top: 44px;
+        left: 0;
+        bottom: 0;
+        z-index: 340;
+        overflow-y: auto;
+        box-shadow: 4px 0 14px rgba(0, 0, 0, 0.55);
+    }
+
+    .nav-backdrop {
+        position: fixed;
+        top: 44px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 330;
+        background: rgba(0, 0, 0, 0.5);
+        border: 0;
+        padding: 0;
+    }
+}
+
+@media (min-width: 900px) { .nav-backdrop { display: none; } }
+
+/*
+   Two elements, two jobs. The grid item only stretches; the inner block carries the
+   width cap, the centring and the query container. Combining "margin: 0 auto" with
+   "container-type: inline-size" on one grid item collapses it to its padding: auto
+   margins opt the item out of stretch alignment, and size containment then leaves
+   its contents unable to give it any width back.
+*/
+.app-main {
+    min-width: 0;
+}
+
+.app-content {
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 0 8px 32px;
+    /* Lets the dashboard react to the space it actually has, which changes when the
+       navigation panel is toggled - a viewport media query cannot see that. */
+    container: appmain / inline-size;
+}
+
+/* Slim strip pinned to the top of the viewport, with the navigation toggle at its far
+   left corner so the control is always in the same place. */
+.app-topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 44px;
+    z-index: 350;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 8px;
+    background: var(--face);
+    border-bottom: 2px solid var(--shadow);
+    box-shadow: 0 1px 0 var(--highlight) inset;
+}
+
+.app-topbar .topbar-title {
+    font-weight: bold;
+    letter-spacing: 0.04em;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hamburger {
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    width: 38px;
+    height: 34px;
+    flex: none;
+    align-items: center;
+}
+
+.hamburger span {
+    display: block;
+    width: 18px;
+    height: 2px;
+    background: var(--fg);
+}
+
+/* ------------------------------------------------------------ dashboard grid */
+
+/* Single column by default; the event log moves alongside once there is room.
+   Browsers without container query support simply keep the stacked layout. */
+.dashboard {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0 16px;
+    align-items: start;
+}
+
+.dashboard-main, .dashboard-side { min-width: 0; }
+
+@container appmain (min-width: 1040px) {
+    .dashboard { grid-template-columns: minmax(0, 1fr) 400px; }
+
+    /*
+        The log is just another window in the column: it lines up with the status window at
+        the top and scrolls with everything else. It also stretches so its bottom edge finishes
+        level with the last window in the centre stack. Its height therefore comes from the
+        column beside it, not from its own contents, so arriving entries cannot resize it.
+    */
+    /* The row height includes the last window's bottom margin, which would leave the log
+       hanging 20px below it. Dropped only here: stacked, that margin is the gap between the
+       centre stack and the log. */
+    .dashboard-main > .cde-window:last-child { margin-bottom: 0; }
+
+    .dashboard-side {
+        align-self: stretch;
+        position: relative;
+    }
+
+    /*
+        Out of flow on purpose. Left in flow, a long scrollback would size the grid row itself
+        and the column would end up taller than the centre stack, so the bottoms could never
+        meet. With nothing in flow the row is sized by the centre stack, stretch gives this
+        column that height, and the window fills it.
+    */
+    .dashboard-side > .cde-window {
+        position: absolute;
+        inset: 0;
+        margin-bottom: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Rolled up it should collapse to its title bar, not hold the full column height. */
+    .dashboard-side > .cde-window.shaded { bottom: auto; }
+
+    /* The shaded rule later in the file still wins over this display value. */
+    .dashboard-side > .cde-window > .window-content {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .dashboard-side .event-log {
+        flex: 1;
+        min-height: 0;
+        max-height: none;
+    }
+}
+
+/* ------------------------------------------------------------- window frames */
+
+/*
+   CDE window decoration, drawn entirely in CSS rather than from nine-slice images.
+   The Motif frame is a stack of bevels: a raised outer frame, a raised title bar in
+   the accent colour, an optional menu bar, and a sunken client area. Because every
+   part is a real element, the title-bar boxes and the menu bar can carry behaviour
+   instead of being painted-on decoration.
+
+   Motif button layout, which is what the reference screenshots show:
+     left box   - window menu (click opens it, double-click closes the window)
+     right boxes- minimise (small square) then maximise (large square)
+*/
+
+.cde-window {
+    position: relative;
+    background: var(--face);
+    padding: 4px;
+    margin-bottom: 20px;
+    border: 3px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+/* The thin groove just inside the outer frame, as Motif draws it. */
+.cde-window::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border: 1px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+    pointer-events: none;
+}
+
+.cde-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px;
+    background: var(--accent);
+    border: 2px solid;
+    border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
+    user-select: none;
+}
+
+.cde-titlebar .cw-title {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 14px;
+    color: var(--title-fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 4px;
+}
+
+/* An inactive floating window drops to the frame colour, as a real window manager does. */
+.cde-window.inactive > .cde-titlebar {
+    background: var(--face);
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+.cde-window.inactive > .cde-titlebar .cw-title { color: var(--label-fg); }
+
+/* Title-bar boxes ------------------------------------------------------------ */
+
+.cw-box {
+    flex: none;
+    width: 21px;
+    height: 21px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    border: 2px solid;
+    border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    min-height: 0;
+}
+
+.cde-window.inactive .cw-box {
+    background: var(--face);
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+.cw-box:active {
+    border-color: var(--accent-lo) var(--accent-hi) var(--accent-hi) var(--accent-lo);
+}
+
+.cw-box:focus-visible { outline: 2px solid var(--fg); outline-offset: 1px; }
+
+/* The glyphs are drawn rather than typed, so they scale with the frame and stay crisp. */
+.cw-box .glyph { display: block; background: transparent; }
+
+.cw-box.cw-menu-btn .glyph {
+    width: 11px;
+    height: 3px;
+    background: var(--accent-fg);
+    border-top: 1px solid var(--accent-hi);
+    border-bottom: 1px solid var(--accent-lo);
+}
+
+.cw-box.cw-min .glyph {
+    width: 6px;
+    height: 6px;
+    border: 2px solid;
+    border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
+}
+
+.cw-box.cw-max .glyph {
+    width: 12px;
+    height: 12px;
+    border: 2px solid;
+    border-color: var(--accent-hi) var(--accent-lo) var(--accent-lo) var(--accent-hi);
+}
+
+.cde-window.inactive .cw-box .glyph {
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+.cde-window.inactive .cw-box.cw-menu-btn .glyph { background: var(--fg); }
+
+/* Client area ---------------------------------------------------------------- */
+
+.cde-window > .window-content {
+    margin-top: 4px;
+    padding: 12px 14px 14px;
+    border: 2px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+    background: var(--terminal);
+}
+
+/* Rolled up by the minimise box: the frame stays, the client area goes. */
+.cde-window.shaded > .window-content,
+.cde-window.shaded > .cde-menubar { display: none; }
+
+/* A window with no decoration still needs its client area to look right. */
+.cde-window.plain > .window-content { margin-top: 0; }
+
+.cde-panel {
+    border: 2px solid var(--shadow);
+    border-top-color: var(--highlight);
+    border-left-color: var(--highlight);
+    background: var(--panel-bg);
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.cde-panel > h3 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    text-transform: uppercase;
+}
+
+/* --------------------------------------------------------------- menu bars */
+
+.cde-menubar {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    margin-top: 4px;
+    padding: 2px;
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+    user-select: none;
+}
+
+.cde-menubar .spacer { flex: 1; }
+
+.cde-menubar > button {
+    font: inherit;
+    font-size: 13px;
+    color: var(--fg);
+    background: none;
+    border: 2px solid transparent;
+    padding: 2px 10px;
+    cursor: pointer;
+    min-height: 0;
+    white-space: nowrap;
+}
+
+.cde-menubar > button:hover:not(:disabled),
+.cde-menubar > button.open {
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+.cde-menubar > button.open { background: var(--face-pressed); }
+
+.cde-menubar > button:disabled { opacity: 0.45; cursor: default; }
+
+/* Mnemonic underline, the way Motif marks the keyboard letter. */
+.cde-menubar u, .cde-dropdown u { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Dropdown panes are positioned relative to the menu bar button that owns them. */
+.menu-anchor { position: relative; display: flex; }
+
+.cde-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 60;
+    min-width: 190px;
+    padding: 3px;
+    background: var(--face);
+    border: 3px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+.cde-dropdown.align-right { left: auto; right: 0; }
+
+.cde-dropdown button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    font-size: 13px;
+    color: var(--fg);
+    background: none;
+    border: 0;
+    padding: 6px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.cde-dropdown button:hover:not(:disabled) { background: var(--accent); color: var(--accent-fg); }
+.cde-dropdown button:disabled { opacity: 0.45; cursor: not-allowed; }
+.cde-dropdown hr { border: 0; border-top: 1px solid var(--shadow); margin: 3px 0; }
+
+.cde-dropdown .accel { float: right; margin-left: 20px; opacity: 0.7; }
+
+/* ----------------------------------------------------------------- nav panel */
+
+/* The CDE front panel, using the same drawn frame as the windows. */
+.app-nav {
+    position: relative;
+    /* display is owned by the visibility rules below; only the axis belongs here. */
+    flex-direction: column;
+    width: 250px;
+    min-height: 420px;
+    background: var(--face);
+    padding: 4px;
+    border: 3px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+.app-nav > .cde-titlebar { margin-bottom: 4px; }
+
+.app-nav ul {
+    /* Fills the panel so a full-height drawer has no bare strip at the bottom. */
+    flex: 1;
+    list-style: none;
+    margin: 0;
+    padding: 8px 0 16px;
+    border: 2px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+    background: var(--panel-bg);
+}
+
+.app-nav li { margin: 4px 12px; }
+
+.app-nav .nav-heading {
+    font-weight: bold;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 6px 4px 4px;
+    margin: 14px 12px 4px;
+    color: var(--accent);
+    border-bottom: 1px solid var(--shadow);
+}
+
+.app-nav .nav-link a,
+.app-nav .nav-home a {
+    display: block;
+    text-decoration: none;
+    color: var(--fg);
+    text-align: center;
+    padding: 8px 12px;
+    background: var(--face);
+    border: 3px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+.app-nav .nav-home a {
+    font-size: 18px;
+    font-weight: bold;
+    padding: 10px 16px;
+}
+
+.app-nav .nav-link a:hover,
+.app-nav .nav-home a:hover { background: var(--face-hover); text-decoration: underline; }
+
+.app-nav .nav-link a.active {
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+    background: var(--face-pressed);
+}
+
+.app-nav .nav-close a { font-weight: bold; }
+
+/* ------------------------------------------------------- floating windows */
+
+/*
+   Consoles open as real windows on the page rather than a navigation, so a session
+   survives moving around the app. They are absolutely positioned inside a full-page
+   layer; dragging and resizing are done in JavaScript so a pointer move does not make
+   a server round trip on every frame.
+*/
+.window-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 400;
+    pointer-events: none;
+}
+
+.window-layer .cde-window {
+    position: absolute;
+    margin: 0;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
+}
+
+.window-layer .cde-window > .window-content {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 8px;
+}
+
+.window-layer .cde-titlebar { cursor: move; }
+
+.window-layer .cde-window.maximised {
+    inset: 4px !important;
+    width: auto !important;
+    height: auto !important;
+}
+
+.window-layer .cde-window.shaded {
+    height: auto !important;
+}
+
+/* Motif puts a resize grip in the bottom-right corner of the frame. */
+.cw-grip {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 18px;
+    height: 18px;
+    cursor: nwse-resize;
+    background: var(--face);
+    border: 2px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+    z-index: 2;
+}
+
+.cde-window.maximised .cw-grip,
+.cde-window.shaded .cw-grip { display: none; }
+
+/* A window being dragged should not let the pointer select text underneath it. */
+body.cw-dragging { user-select: none; cursor: move; }
+body.cw-resizing { user-select: none; cursor: nwse-resize; }
+
+/* On a phone a floating window is more nuisance than help, so it fills the screen. */
+@media (max-width: 720px) {
+    .window-layer .cde-window {
+        inset: 4px !important;
+        width: auto !important;
+        height: auto !important;
+    }
+    .cw-grip { display: none; }
+    .window-layer .cde-titlebar { cursor: default; }
+}
+
+/* ------------------------------------------------------------------ controls */
+
+.cde-btn {
+    font: inherit;
+    color: var(--fg);
+    background: var(--face);
+    border: 3px solid var(--face);
+    border-top-color: var(--highlight);
+    border-left-color: var(--highlight);
+    border-right-color: var(--shadow);
+    border-bottom-color: var(--shadow);
+    padding: 5px 14px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.cde-btn:hover:not(:disabled) { background: var(--face-hover); }
+
+/* A pressed CDE button inverts its bevel - that is the whole visual language. */
+.cde-btn:active:not(:disabled),
+.cde-btn.pressed {
+    border-top-color: var(--shadow);
+    border-left-color: var(--shadow);
+    border-right-color: var(--highlight);
+    border-bottom-color: var(--highlight);
+    background: var(--face-pressed);
+    padding: 6px 13px 4px 15px;
+}
+
+.cde-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cde-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.cde-btn.small { padding: 3px 9px; font-size: 12px; }
+.cde-btn.small:active:not(:disabled) { padding: 4px 8px 2px 10px; }
+
+.cde-btn.danger { color: var(--danger-fg); font-weight: bold; }
+
+/* A checkbox that reads as one control with its label. */
+.inline-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.inline-toggle input { accent-color: var(--accent); width: 15px; height: 15px; }
+
+.inline-toggle .badge { margin-right: 0; }
+
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* Keeps a table's action buttons on one line instead of stacking in a narrow column. */
+.btn-row.nowrap { flex-wrap: nowrap; }
+
+input[type=text], input[type=number], input[type=password], select, textarea {
+    font: inherit;
+    color: var(--field-fg);
+    background: var(--field-bg);
+    border: 2px solid var(--highlight);
+    border-top-color: var(--shadow);
+    border-left-color: var(--shadow);
+    padding: 4px 6px;
+    min-width: 0;
+}
+
+textarea { font-family: var(--mono); font-size: 12px; }
+
+label { display: block; font-size: 12px; margin-bottom: 12px; }
+label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
+
+/* ---------------------------------------------------------------------- LEDs */
+
+.cde-led {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 2px solid var(--shadow);
+    background: var(--led-off);
+    flex: none;
+    vertical-align: middle;
+}
+
+.cde-led.on { background: var(--led-on); box-shadow: 0 0 5px var(--led-on); }
+.cde-led.unknown { background: var(--led-unknown); }
+.cde-led.busy { background: var(--led-busy); animation: led-pulse 1s ease-in-out infinite; }
+
+@keyframes led-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--led-busy); }
+    50% { opacity: 0.35; box-shadow: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cde-led.busy { animation: none; }
+}
+
+/* -------------------------------------------------------------- outlet grid */
+
+.outlet-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px;
+}
+
+/* The toggle and its menu button are siblings: a button cannot legally nest inside
+   another one, and the menu must not fire the toggle underneath it. */
+.outlet-cell {
+    position: relative;
+    display: flex;
+    /* Grid and flex items default to min-width:auto, which refuses to shrink below the
+       widest unbreakable text. A long progress line would then push the button out over
+       its neighbour instead of being clipped. */
+    min-width: 0;
+}
+
+.outlet {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
+    text-align: left;
+    /* .cde-btn sets nowrap, which is what drove the button's minimum width up. The
+       children below do their own clipping, so the button itself need not resist wrapping. */
+    white-space: normal;
+    padding: 8px 10px;
+    padding-right: 34px;
+    min-height: 66px;
+}
+
+/* Every line clips rather than widening the button. */
+.outlet > * { min-width: 0; max-width: 100%; }
+
+/* Same menu as right-click, reachable by touch and by keyboard. */
+.outlet-menu-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 26px;
+    height: 24px;
+    padding: 0;
+    line-height: 1;
+    font-size: 15px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.outlet-menu-btn:active:not(:disabled) { padding: 0; }
+
+.outlet .outlet-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    font-size: 11px;
+    color: var(--label-fg);
+}
+
+.outlet .outlet-head span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.outlet .outlet-name {
+    font-weight: bold;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.outlet .outlet-sub {
+    font-size: 11px;
+    color: var(--label-fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* Reserve the line so a window does not jog as the status text comes and goes. */
+    min-height: 1.35em;
+}
+
+.outlet.busy { border-color: var(--accent); }
+
+/* -------------------------------------------------------------- stat tiles */
+
+.stat-row {
+    display: grid;
+    /* Sized so the six overview figures sit on one line at a normal desktop width, and
+       wrap to two rows rather than shrinking past legibility below that. */
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    gap: 10px;
+}
+
+.stat {
+    border: 2px solid var(--shadow);
+    border-top-color: var(--highlight);
+    border-left-color: var(--highlight);
+    background: var(--panel-bg);
+    padding: 10px 12px;
+}
+
+.stat .stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--label-fg);
+    margin-bottom: 4px;
+}
+
+.stat .stat-value { font-size: 22px; font-weight: bold; color: var(--accent); }
+.stat .stat-unit { font-size: 13px; font-weight: normal; color: var(--fg); margin-left: 3px; }
+.stat .stat-note { font-size: 11px; color: var(--label-fg); margin-top: 3px; }
+
+/* ------------------------------------------------------------------- tables */
+
+.cde-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid var(--rule);
+    font-size: 13px;
+}
+
+.cde-table th, .cde-table td {
+    border: 1px solid var(--rule);
+    padding: 6px 9px;
+    text-align: left;
+    vertical-align: middle;
+    color: var(--fg);
+}
+
+.cde-table th {
+    background: var(--table-head);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.cde-table tbody tr:hover { background: var(--table-hover); }
+
+.table-scroll { overflow-x: auto; }
+
+/* ------------------------------------------------------------- context menu */
+
+.cde-contextmenu {
+    position: fixed;
+    z-index: 400;
+    min-width: 190px;
+    padding: 3px;
+    background: var(--face);
+    border: 3px solid var(--face);
+    border-top-color: var(--highlight);
+    border-left-color: var(--highlight);
+    border-right-color: var(--shadow);
+    border-bottom-color: var(--shadow);
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* On a phone the pointer position is a poor anchor, so the menu becomes a bottom
+   sheet. The inline coordinates set by the component are overridden deliberately. */
+@media (max-width: 640px) {
+    .cde-contextmenu {
+        left: 50% !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: 0 !important;
+        transform: translateX(-50%);
+        width: min(380px, calc(100vw - 12px));
+        max-height: 70vh;
+    }
+}
+
+.cde-contextmenu .menu-title {
+    padding: 5px 10px;
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--label-fg);
+    border-bottom: 1px solid var(--shadow);
+    margin-bottom: 3px;
+}
+
+.cde-contextmenu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    font-size: 13px;
+    color: var(--fg);
+    background: none;
+    border: 0;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
+.cde-contextmenu button:hover:not(:disabled) { background: var(--accent); color: var(--accent-fg); }
+.cde-contextmenu button:disabled { opacity: 0.45; cursor: not-allowed; }
+.cde-contextmenu hr { border: 0; border-top: 1px solid var(--shadow); margin: 3px 0; }
+
+/* ------------------------------------------------------------------ dialogs */
+
+.cde-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.cde-dialog {
+    background: var(--face);
+    border: 3px solid var(--face);
+    border-top-color: var(--highlight);
+    border-left-color: var(--highlight);
+    border-right-color: var(--shadow);
+    border-bottom-color: var(--shadow);
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.4);
+    max-width: 540px;
+    width: 100%;
+}
+
+.cde-dialog .dialog-title {
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-weight: bold;
+    padding: 6px 10px;
+}
+
+.cde-dialog .dialog-body { padding: 14px; color: var(--fg); }
+.cde-dialog .dialog-body p { margin: 0 0 10px; }
+.cde-dialog .dialog-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding: 0 14px 14px;
+}
+
+/* --------------------------------------------------------------- event log */
+
+.event-log {
+    font-family: var(--mono);
+    font-size: 12px;
+    max-height: 340px;
+    overflow-y: auto;
+    background: var(--log-bg);
+    border: 2px solid var(--shadow);
+    border-right-color: var(--highlight);
+    border-bottom-color: var(--highlight);
+    padding: 6px 8px;
+}
+
+.event-log .row { display: flex; gap: 8px; padding: 1px 0; align-items: baseline; }
+.event-log .time { color: var(--label-fg); flex: none; }
+.event-log .cat { color: var(--accent); flex: none; min-width: 62px; }
+.event-log .msg { overflow-wrap: anywhere; }
+.event-log .row.warning .msg { color: var(--warn-fg); }
+.event-log .row.error .msg { color: var(--danger-fg); font-weight: bold; }
+.event-log .row.debug { opacity: 0.65; }
+
+.event-log details summary { cursor: pointer; color: var(--label-fg); }
+.event-log details pre {
+    margin: 4px 0 8px;
+    padding: 6px;
+    background: var(--code-bg);
+    color: var(--code-fg);
+    white-space: pre-wrap;
+    max-height: 260px;
+    overflow: auto;
+}
+
+/* ---------------------------------------------------------------- terminal */
+
+/* The terminal fills its floating window; the frame below is the standalone page. */
+.terminal-window > .window-content {
+    background: #12141a;
+    display: flex;
+    flex-direction: column;
+}
+
+.terminal-host { flex: 1; min-height: 0; }
+
+.terminal-notice {
+    flex: none;
+    margin-top: 6px;
+    padding: 4px 6px;
+    font-size: 11px;
+    color: var(--accent-fg);
+    background: var(--accent);
+}
+
+.terminal-frame {
+    background: #000;
+    border: 3px solid var(--shadow);
+    border-right-color: var(--highlight);
+    border-bottom-color: var(--highlight);
+    padding: 4px;
+    height: min(70vh, 640px);
+}
+
+.terminal-frame > div { width: 100%; height: 100%; }
+
+/* ------------------------------------------------------------------ badges */
+
+.badge {
+    display: inline-block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border: 1px solid var(--rule);
+    background: var(--panel-bg);
+    color: var(--label-fg);
+    margin-right: 4px;
+}
+
+.badge.warn { color: var(--warn-fg); border-color: var(--warn-fg); }
+.badge.error { color: var(--danger-fg); border-color: var(--danger-fg); }
+
+.muted { color: var(--label-fg); }
+.nowrap { white-space: nowrap; }
+.mono { font-family: var(--mono); }
+.spread { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* Blazor's own error strip, restyled so it does not break the illusion. */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: var(--accent);
+    color: var(--accent-fg);
+    padding: 8px 14px;
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.4);
+}
+#blazor-error-ui .dismiss { cursor: pointer; float: right; font-weight: bold; }
+
+/* ------------------------------------------------------------ touch targets */
+
+/* Coarse pointers need more than a mouse does; leave desktop density alone. */
+@media (pointer: coarse) {
+    .cde-btn { min-height: 40px; }
+    .cde-btn.small { min-height: 34px; padding: 6px 11px; }
+    .outlet-menu-btn { width: 34px; height: 30px; min-height: 0; }
+    .outlet { padding-right: 42px; }
+    .cde-contextmenu button { padding: 11px 12px; }
+    .event-log { max-height: 260px; }
+}
+
+/* The terminal needs to stay usable once a virtual keyboard takes half the screen. */
+@media (max-width: 640px) {
+    .terminal-frame { height: min(58vh, 420px); }
+    .cde-window { padding: 20px 14px 26px; }
+}

@@ -1,0 +1,30 @@
+# Server Technology Sentry / CW series switched PDU.
+# A second worked example: note the different OIDs, command values and load unit.
+name: Server Technology Sentry
+
+snmp:
+  version: v2c
+
+outlets:
+  stateOid: "1.3.6.1.4.1.1718.3.2.3.1.10.1.1.{outlet}"
+  controlOid: "1.3.6.1.4.1.1718.3.2.3.1.11.1.1.{outlet}"
+  nameOid: "1.3.6.1.4.1.1718.3.2.3.1.3.1.1.{outlet}"
+  commands:
+    on: 1
+    off: 2
+    reboot: 3
+  stateMap:
+    0: off
+    1: on
+    2: off
+
+power:
+  # infeedPower - already in watts on this family, so no conversion is needed.
+  loadOid: "1.3.6.1.4.1.1718.3.2.2.1.7.1.1"
+  loadUnit: watts
+  nominalVolts: 120
+  # Sentry units meter each outlet, so per-outlet draw is available.
+  perOutletWattsOid: "1.3.6.1.4.1.1718.3.2.3.1.12.1.1.{outlet}"
+  # Per-outlet readings often use a different unit from the whole-unit load. Set this when
+  # they differ; it defaults to loadUnit above.
+  perOutletUnit: watts

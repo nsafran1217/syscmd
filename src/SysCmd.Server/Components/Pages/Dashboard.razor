@@ -1,0 +1,675 @@
+@page "/"
+@inherits LivePage
+
+@inject LabStatusService StatusService
+@inject PduService Pdus
+@inject MachineService Machines
+@inject GroupService Groups
+@inject MachinePowerService Power
+@inject JobQueue Jobs
+@inject EventLog Events
+@inject ConfigStore Config
+@inject ConsoleWindowManager ConsoleWindows
+@inject IJSRuntime JS
+
+<PageTitle>@(_status?.SiteName ?? "syscmd")</PageTitle>
+
+<div class="dashboard">
+<div class="dashboard-main">
+
+@* ---------------------------------------------------------- status overview *@
+<CdeWindow Title="@($"Status - {_status?.SiteName ?? "syscmd"}")">
+    <h1 style="margin:0 0 12px; font-size:20px;">Status Overview</h1>
+
+    @if (_status is null)
+    {
+        <p class="muted">Reading the lab...</p>
+    }
+    else
+    {
+        <div class="stat-row">
+            <div class="stat">
+                <div class="stat-label">Machines on</div>
+                <div class="stat-value">@_status.MachinesOn<span class="stat-unit">/ @_status.MachinesTotal</span></div>
+                @if (_status.MachinesUnknown > 0)
+                {
+                    <div class="stat-note">@_status.MachinesUnknown unknown</div>
+                }
+            </div>
+            <div class="stat">
+                <div class="stat-label">Power draw</div>
+                <div class="stat-value">@_status.Power.CurrentWatts.ToString("F0")<span class="stat-unit">W</span></div>
+                <div class="stat-note">@_status.OutletsOn of @_status.OutletsTotal outlets live</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Cost / hour</div>
+                <div class="stat-value">@Rate(_status.Power.CostPerHour)</div>
+                <div class="stat-note">at the current draw</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Today</div>
+                <div class="stat-value">@FormatMoney(_status.Power.TodayCost)</div>
+                <div class="stat-note">@_status.Power.TodayKwh.ToString("F2") kWh</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">This month</div>
+                <div class="stat-value">@FormatMoney(_status.Power.MonthCost)</div>
+                <div class="stat-note">@_status.Power.MonthKwh.ToString("F1") kWh</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Activity</div>
+                <div class="stat-value">@_status.ActiveJobs</div>
+                <div class="stat-note">
+                    @_status.PdusReachable/@_status.PdusTotal PDUs reachable
+                </div>
+            </div>
+        </div>
+
+        @if (_status.ConfigErrors > 0)
+        {
+            <p style="margin-top:12px;">
+                <span class="badge error">Config</span>
+                @_status.ConfigErrors configuration @(_status.ConfigErrors == 1 ? "error" : "errors") -
+                <a href="/config">review them</a>.
+            </p>
+        }
+    }
+</CdeWindow>
+
+@* --------------------------------------------------------------- PDU control *@
+@foreach (var pdu in _pdus)
+{
+    <CdeWindow Title="@($"PDU - {pdu.Name}")">
+        <div class="spread" style="margin-bottom:12px;">
+            <h2 style="margin:0; font-size:16px;">@pdu.Name</h2>
+            <div class="muted">
+                @if (pdu.Reachable)
+                {
+                    <span>@pdu.OnCount of @pdu.Outlets.Count on</span>
+                    @if (pdu.Watts is { } w)
+                    {
+                        <span> &middot; @w.ToString("F0") W</span>
+                        @if (pdu.Amps is { } a)
+                        {
+                            <span> &middot; @a.ToString("F1") A</span>
+                        }
+                    }
+                }
+                else
+                {
+                    <span class="badge error">Unreachable</span>
+                    <span>@pdu.Error</span>
+                }
+            </div>
+        </div>
+
+        <div class="spread" style="margin:0 0 10px;">
+            <p class="muted" style="margin:0; font-size:12px; flex:1; min-width:220px;">
+                Control PDU outlets.
+            </p>
+            <div class="btn-row">
+                <label class="inline-toggle" title="Hide outlets with no machine assigned to them">
+                    <input type="checkbox" checked="@_hideUnassigned" @onchange="OnHideUnassignedChanged" />
+                    <span>Hide unassigned</span>
+                </label>
+                <label class="inline-toggle" title="Skip the are-you-sure dialog when powering something down">
+                    <input type="checkbox" checked="@_skipConfirm" @onchange="OnSkipConfirmChanged" />
+                    @* While it is on, the label itself carries the warning rather than a second
+                       badge sitting beside it. *@
+                    <span class="@(_skipConfirm ? "badge warn" : "")">Skip confirmation</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="outlet-grid">
+            @foreach (var outlet in VisibleOutlets(pdu))
+            {
+                var busy = Jobs.ActiveForOutlet(pdu.PduId, outlet.Outlet) is not null
+                           || (outlet.MachineId is { } mid && Jobs.ActiveForMachine(mid) is not null);
+                var machine = outlet.MachineId is null ? null : _machines.FirstOrDefault(m => m.Id == outlet.MachineId);
+
+                <div class="outlet-cell">
+                    <button type="button"
+                            class="cde-btn outlet @(busy ? "busy" : "")"
+                            disabled="@(!pdu.Reachable || busy)"
+                            title="@OutletTooltip(pdu, outlet, busy)"
+                            @onclick="() => ToggleOutletAsync(outlet)"
+                            @oncontextmenu="e => OpenOutletMenu(e, pdu, outlet)"
+                            @oncontextmenu:preventDefault="true">
+                        <span class="outlet-head">
+                            <Led State="outlet.State" Busy="busy" />
+                            <span>Outlet @outlet.Outlet</span>
+                        </span>
+                        <span class="outlet-name">@outlet.DisplayName</span>
+                        <span class="outlet-sub">
+                            @if (busy)
+                            {
+                                @(BusyStepFor(pdu.PduId, outlet) ?? "Working...")
+                            }
+                            else if (machine?.MpType is { } mp)
+                            {
+                                <span>@mp</span>
+                            }
+                            else if (outlet.MachineId is null)
+                            {
+                                <span>unassigned</span>
+                            }
+                            else
+                            {
+                                <span>outlet only</span>
+                            }
+                        </span>
+                    </button>
+
+                    @* Same menu as right-click, so forced actions and consoles are reachable
+                       by touch and by keyboard, not only with a mouse. *@
+                    <button type="button" class="cde-btn outlet-menu-btn"
+                            title="@($"Actions for {outlet.DisplayName}")"
+                            aria-label="@($"Actions for {outlet.DisplayName}")"
+                            @onclick="e => OpenOutletMenu(e, pdu, outlet)">…</button>
+                </div>
+            }
+        </div>
+
+        @{ var hidden = pdu.Outlets.Count - VisibleOutlets(pdu).Count; }
+        @if (hidden > 0)
+        {
+            <p class="muted" style="margin:8px 0 0; font-size:11px;">
+                @hidden unassigned @(hidden == 1 ? "outlet is" : "outlets are") hidden.
+            </p>
+        }
+    </CdeWindow>
+}
+
+@* -------------------------------------------------------------------- groups *@
+<CdeWindow Title="Groups">
+    <div class="spread" style="margin-bottom:10px;">
+        <h2 style="margin:0; font-size:16px;">Machine Groups</h2>
+        <a href="/config/groups" class="muted">Edit groups</a>
+    </div>
+
+    @if (_groups.Count == 0)
+    {
+        <p class="muted">No groups defined yet. <a href="/config/groups">Create one</a>.</p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="cde-table">
+                <thead>
+                    <tr>
+                        <th style="width:1%"></th>
+                        <th>Group</th>
+                        <th>Members</th>
+                        <th class="nowrap">Stagger</th>
+                        <th style="width:1%"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var group in _groups)
+                    {
+                        <tr>
+                            <td>
+                                <Led State="@(group.AllOn ? PowerState.On : group.AllOff ? PowerState.Off : PowerState.Unknown)"
+                                     Busy="group.IsBusy" />
+                            </td>
+                            <td><strong>@group.Name</strong></td>
+                            <td>@group.OnCount of @group.MachineCount on</td>
+                            <td class="nowrap muted">@group.StaggerSeconds s</td>
+                            <td>
+                                <div class="btn-row nowrap">
+                                    <button class="cde-btn small" disabled="@group.IsBusy"
+                                            @onclick="() => AskGroupAsync(group, PowerAction.On)">All On</button>
+                                    <button class="cde-btn small" disabled="@group.IsBusy"
+                                            @onclick="() => AskGroupAsync(group, PowerAction.Off)">All Off</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</CdeWindow>
+
+@* ------------------------------------------------------------------ machines *@
+<CdeWindow Title="Machines">
+    <div class="spread" style="margin-bottom:10px;">
+        <h2 style="margin:0; font-size:16px;">Defined Machines</h2>
+        <a href="/config/machines" class="muted">Edit machines</a>
+    </div>
+
+    @if (_machines.Count == 0)
+    {
+        <p class="muted">No machines defined yet. <a href="/config/machines">Add one</a>.</p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="cde-table">
+                <thead>
+                    <tr>
+                        <th style="width:1%"></th>
+                        <th>Machine</th>
+                        <th>Addresses</th>
+                        <th style="width:1%">Power</th>
+                        <th style="width:1%">Console</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in _machines)
+                    {
+                        <tr>
+                            <td><Led State="m.OutletState" Busy="m.IsBusy" /></td>
+                            <td>
+                                <strong>@m.Name</strong>
+                                <div class="muted" style="font-size:11px;">
+                                    @(m.IsBusy ? m.ActiveJobStep ?? "working..." : m.Description)
+                                </div>
+                            </td>
+                            <td class="mono" style="font-size:11px;">
+                                @foreach (var a in m.Addresses)
+                                {
+                                    <div>@a.Ip @(string.IsNullOrEmpty(a.Hostname) ? "" : $"({a.Hostname})")</div>
+                                }
+                            </td>
+                            <td>
+                                @* These go through the management processor: outlet power, then the
+                                   MP power-on sequence; and a confirmed shutdown before the cut. *@
+                                <div class="btn-row nowrap">
+                                    <button class="cde-btn small" disabled="@m.IsBusy"
+                                            title="Apply outlet power and bring the system up through its management processor"
+                                            @onclick="() => MachinePowerAsync(m, PowerAction.On)">On</button>
+                                    <button class="cde-btn small" disabled="@m.IsBusy"
+                                            title="Shut the system down, then switch its outlet off"
+                                            @onclick="() => MachinePowerAsync(m, PowerAction.Off)">Off</button>
+                                    <button class="cde-btn small" disabled="@(m.IsBusy || m.MpType is null)"
+                                            title="@(m.MpType is null ? "No management processor" : "Reset through the management processor")"
+                                            @onclick="() => MachinePowerAsync(m, PowerAction.Reset)">Reset</button>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="btn-row nowrap">
+                                    @if (m.HasMpConsole)
+                                    {
+                                        <button class="cde-btn small" title="@m.MpAddress"
+                                                @onclick='() => OpenConsole(m.Id, "mp")'>MP</button>
+                                    }
+                                    @if (m.HasSerialConsole)
+                                    {
+                                        <button class="cde-btn small" title="@m.SerialAddress"
+                                                @onclick='() => OpenConsole(m.Id, "serial")'>Serial</button>
+                                    }
+                                    @if (!m.HasMpConsole && !m.HasSerialConsole)
+                                    {
+                                        <span class="muted">-</span>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</CdeWindow>
+
+</div>@* /dashboard-main *@
+
+@* The event log sits alongside on a wide screen and drops below when space runs out. *@
+<div class="dashboard-side">
+
+@* ----------------------------------------------------------------- event log *@
+<CdeWindow Title="Event Log">
+    <div class="spread" style="margin-bottom:10px;">
+        <h2 style="margin:0; font-size:16px;">Recent Activity</h2>
+        <div class="btn-row">
+            <select @bind="_logLevel" @bind:after="RefreshNowAsync">
+                <option value="Debug">All</option>
+                <option value="Info">Info and above</option>
+                <option value="Warning">Warnings and errors</option>
+                <option value="Error">Errors only</option>
+            </select>
+            <a href="/events" class="muted">Full log</a>
+        </div>
+    </div>
+
+    <EventLogView Events="_events" />
+</CdeWindow>
+
+</div>@* /dashboard-side *@
+</div>@* /dashboard *@
+
+@* ------------------------------------------------- outlet menu (right-click or …) *@
+<ContextMenu Visible="_menu is not null" Title="@_menu?.Title" X="_menu?.X ?? 0" Y="_menu?.Y ?? 0"
+             OnClose="CloseMenu">
+    @if (_menu is { } menu)
+    {
+        <button @onclick="() => RunOutletAsync(menu, PowerAction.On, force: false)">
+            Switch outlet on
+        </button>
+        <button disabled="@(!menu.HasMp)"
+                @onclick="() => RunMachineAsync(menu.MachineId!, PowerAction.On)">
+            Power on system via management processor
+        </button>
+        <hr />
+        <button @onclick="() => RunOutletAsync(menu, PowerAction.Off, force: false)">
+            Power off (shut down first)
+        </button>
+        <button class="danger" @onclick="() => ConfirmForceOffAsync(menu)">
+            Force outlet off
+        </button>
+        <button @onclick="() => RunOutletAsync(menu, PowerAction.Reboot, force: true)">
+            Power cycle outlet
+        </button>
+        <hr />
+        <button disabled="@(menu.MachineId is null)"
+                @onclick="() => RunMachineAsync(menu.MachineId!, PowerAction.Reset)">
+            Reset via management processor
+        </button>
+        <button disabled="@(!menu.HasMp)" @onclick='() => OpenConsole(menu.MachineId!, "mp")'>
+            Open MP console
+        </button>
+        <button disabled="@(!menu.HasSerial)" @onclick='() => OpenConsole(menu.MachineId!, "serial")'>
+            Open serial console
+        </button>
+    }
+</ContextMenu>
+
+<ConfirmDialog Visible="_confirm is not null"
+               Title="@(_confirm?.Title ?? "")"
+               ConfirmLabel="@(_confirm?.ConfirmLabel ?? "OK")"
+               Destructive="@(_confirm?.Destructive ?? false)"
+               OnConfirm="ConfirmAsync"
+               OnCancel="() => { _confirm = null; }">
+    @if (_confirm is { } c)
+    {
+        <p>@c.Message</p>
+    }
+</ConfirmDialog>
+
+@code {
+    private LabStatus? _status;
+    private IReadOnlyList<PduStatus> _pdus = [];
+    private IReadOnlyList<MachineStatus> _machines = [];
+    private IReadOnlyList<GroupStatus> _groups = [];
+    private IReadOnlyList<LabEvent> _events = [];
+
+    private string _logLevel = "Info";
+
+    /// <summary>Remembered per browser; groups still confirm regardless.</summary>
+    private bool _skipConfirm;
+
+    /// <summary>Outlets with no machine bound to them are hidden by default.</summary>
+    private bool _hideUnassigned = true;
+
+    /// <summary>Outlets to draw for a PDU, after the unassigned filter.</summary>
+    private IReadOnlyList<OutletStatus> VisibleOutlets(PduStatus pdu) =>
+        _hideUnassigned
+            ? [.. pdu.Outlets.Where(o => o.MachineId is not null)]
+            : pdu.Outlets;
+
+    private OutletMenu? _menu;
+    private PendingConfirm? _confirm;
+
+    private sealed record OutletMenu(
+        string Title, double X, double Y, string PduId, int Outlet,
+        string? MachineId, bool HasMp, bool HasSerial);
+
+    private sealed record PendingConfirm(
+        string Title, string Message, string ConfirmLabel, bool Destructive, Func<Task> Action);
+
+    protected override async Task LoadAsync(CancellationToken ct)
+    {
+        _status = await StatusService.GetAsync(ct);
+        _pdus = await Pdus.ReadAllAsync(ct);
+        _machines = await Machines.ListAsync(ct);
+        _groups = await Groups.ListAsync(ct);
+        _events = Events.Recent(60, Enum.Parse<EventLevel>(_logLevel));
+    }
+
+    // Jobs and events change between timer ticks; re-render as soon as they do.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !RendererInfo.IsInteractive) return;
+        try
+        {
+            _skipConfirm = await JS.InvokeAsync<string?>("syscmdUi.readSetting", "syscmd.skipConfirm") == "1";
+
+            // Absent means nobody has chosen, and the default is to hide them.
+            var stored = await JS.InvokeAsync<string?>("syscmdUi.readSetting", "syscmd.hideUnassigned");
+            _hideUnassigned = stored != "0";
+
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { /* the circuit went away */ }
+    }
+
+    private async Task OnSkipConfirmChanged(ChangeEventArgs e)
+    {
+        _skipConfirm = e.Value is true;
+        Events.Info("ui", _skipConfirm
+            ? "Outlet confirmation dialogs disabled for this browser."
+            : "Outlet confirmation dialogs re-enabled.");
+        try
+        {
+            await JS.InvokeVoidAsync("syscmdUi.writeSetting", "syscmd.skipConfirm", _skipConfirm ? "1" : "0");
+        }
+        catch (JSDisconnectedException) { /* the preference is a convenience */ }
+    }
+
+    private async Task OnHideUnassignedChanged(ChangeEventArgs e)
+    {
+        _hideUnassigned = e.Value is true;
+        try
+        {
+            await JS.InvokeVoidAsync("syscmdUi.writeSetting", "syscmd.hideUnassigned", _hideUnassigned ? "1" : "0");
+        }
+        catch (JSDisconnectedException) { /* the preference is a convenience */ }
+    }
+
+    protected override void Subscribe()
+    {
+        Jobs.JobChanged += OnJobChanged;
+        Events.Written += OnEventWritten;
+    }
+
+    protected override void Unsubscribe()
+    {
+        Jobs.JobChanged -= OnJobChanged;
+        Events.Written -= OnEventWritten;
+    }
+
+    private void OnJobChanged(Job job) => RequestRender();
+
+    private void OnEventWritten(LabEvent evt)
+    {
+        _events = Events.Recent(60, Enum.Parse<EventLevel>(_logLevel));
+        RequestRender();
+    }
+
+    // ------------------------------------------------------------------ actions
+
+    /// <summary>Left click: toggle through the safe path, which is the whole point of the app.</summary>
+    private async Task ToggleOutletAsync(OutletStatus outlet)
+    {
+        var action = outlet.State == PowerState.On ? PowerAction.Off : PowerAction.On;
+
+        // Turning something off is the dangerous direction, so confirm it by name unless the
+        // operator has explicitly turned that off for this browser.
+        if (action == PowerAction.Off && !_skipConfirm)
+        {
+            var name = outlet.DisplayName;
+            _confirm = new PendingConfirm(
+                "Power off",
+                outlet.MachineId is null
+                    ? $"Switch {name} off? Nothing is configured on this outlet, so it will be cut immediately."
+                    : $"Shut {name} down and switch its outlet off? ",
+                "Power off", Destructive: true,
+                () => StartAsync(() => Power.EnqueueOutlet(outlet.PduId, outlet.Outlet, PowerAction.Off, force: false)));
+            return;
+        }
+
+        if (action == PowerAction.Off)
+        {
+            await StartAsync(() => Power.EnqueueOutlet(outlet.PduId, outlet.Outlet, PowerAction.Off, force: false));
+            return;
+        }
+
+        // Switching the outlet on is all this does now; bringing the system up through its
+        // management processor is on the menu as a separate, deliberate choice.
+        await StartAsync(() => Power.EnqueueOutlet(outlet.PduId, outlet.Outlet, PowerAction.On, force: false));
+    }
+
+    private void OpenOutletMenu(MouseEventArgs e, PduStatus pdu, OutletStatus outlet)
+    {
+        var machine = outlet.MachineId is null ? null : _machines.FirstOrDefault(m => m.Id == outlet.MachineId);
+        _menu = new OutletMenu(
+            $"{pdu.Name} outlet {outlet.Outlet} - {outlet.DisplayName}",
+            e.ClientX, e.ClientY,
+            pdu.PduId, outlet.Outlet,
+            outlet.MachineId,
+            machine?.HasMpConsole ?? false,
+            machine?.HasSerialConsole ?? false);
+    }
+
+    private void CloseMenu() => _menu = null;
+
+    private async Task RunOutletAsync(OutletMenu menu, PowerAction action, bool force)
+    {
+        _menu = null;
+        await StartAsync(() => Power.EnqueueOutlet(menu.PduId, menu.Outlet, action, force));
+    }
+
+    private async Task ConfirmForceOffAsync(OutletMenu menu)
+    {
+        _menu = null;
+
+        if (_skipConfirm)
+        {
+            await StartAsync(() => Power.EnqueueOutlet(menu.PduId, menu.Outlet, PowerAction.Off, force: true));
+            return;
+        }
+
+        _confirm = new PendingConfirm(
+            "Force outlet off",
+            $"Power off {menu.Title} immediately?",
+            "Cut power", Destructive: true,
+            () => StartAsync(() => Power.EnqueueOutlet(menu.PduId, menu.Outlet, PowerAction.Off, force: true)));
+    }
+
+    /// <summary>
+    /// Power a machine from the machines list. On brings the system up through its management
+    /// processor; Off shuts it down and only then cuts the outlet. Both directions that take power
+    /// away are confirmed unless the operator has turned confirmations off.
+    /// </summary>
+    private async Task MachinePowerAsync(MachineStatus machine, PowerAction action)
+    {
+        if (action == PowerAction.On || _skipConfirm)
+        {
+            await StartAsync(() => Power.EnqueueMachinePower(machine.Id, action, force: false));
+            return;
+        }
+
+        _confirm = action == PowerAction.Off
+            ? new PendingConfirm(
+                "Power off",
+                $"Shut {machine.Name} down and switch its outlet off? ",
+                "Power off", Destructive: true,
+                () => StartAsync(() => Power.EnqueueMachinePower(machine.Id, PowerAction.Off, force: false)))
+            : new PendingConfirm(
+                "Reset",
+                $"Reset {machine.Name} through its management processor? " +
+                "Anything running on it stops without a clean shutdown.",
+                "Reset", Destructive: true,
+                () => StartAsync(() => Power.EnqueueMachinePower(machine.Id, PowerAction.Reset, force: false)));
+    }
+
+    private async Task RunMachineAsync(string machineId, PowerAction action)
+    {
+        _menu = null;
+        await StartAsync(() => Power.EnqueueMachinePower(machineId, action, force: false));
+    }
+
+    private Task AskGroupAsync(GroupStatus group, PowerAction action)
+    {
+        _confirm = new PendingConfirm(
+            $"{(action == PowerAction.On ? "Power on" : "Power off")} group",
+            action == PowerAction.On
+                ? $"Power on all {group.MachineCount} machines in {group.Name}, {group.StaggerSeconds}s apart?"
+                : $"Shut down all {group.MachineCount} machines in {group.Name}? " +
+                  "Each one is confirmed powered down before its outlet is cut.",
+            action == PowerAction.On ? "Power on" : "Power off",
+            Destructive: action == PowerAction.Off,
+            () => StartAsync(() => Power.EnqueueGroupPower(group.Id, action, force: false)));
+        return Task.CompletedTask;
+    }
+
+    private async Task ConfirmAsync()
+    {
+        var pending = _confirm;
+        _confirm = null;
+        if (pending is not null) await pending.Action();
+    }
+
+    /// <summary>Queue work, surface any rejection in the log, and refresh so the LED lights straight away.</summary>
+    private async Task StartAsync(Func<Job> start)
+    {
+        try { start(); }
+        catch (Exception ex) { Events.Error("ui", ex.Message); }
+        await RefreshNowAsync();
+    }
+
+    /// <summary>Consoles open as windows on this page rather than navigating away.</summary>
+    private void OpenConsole(string machineId, string target)
+    {
+        _menu = null;
+        var machine = _machines.FirstOrDefault(m => m.Id == machineId);
+        ConsoleWindows.Open(
+            machineId,
+            machine?.Name ?? machineId,
+            string.Equals(target, "serial", StringComparison.OrdinalIgnoreCase)
+                ? ConsoleTarget.Serial
+                : ConsoleTarget.Mp);
+    }
+
+    /// <summary>The status line is clipped to the button, so keep the full text on hover.</summary>
+    private string OutletTooltip(PduStatus pdu, OutletStatus outlet, bool busy)
+    {
+        var step = busy ? BusyStepFor(pdu.PduId, outlet) : null;
+        return step is not null
+            ? $"{outlet.DisplayName} - {step}"
+            : $"{outlet.DisplayName} ({pdu.Name} outlet {outlet.Outlet}) - {outlet.State}";
+    }
+
+    private string? BusyStepFor(string pduId, OutletStatus outlet)
+    {
+        var job = Jobs.ActiveForOutlet(pduId, outlet.Outlet)
+                  ?? (outlet.MachineId is { } id ? Jobs.ActiveForMachine(id) : null);
+        return job?.CurrentStep;
+    }
+
+    /// <summary>
+    /// An hourly rate is a much smaller number than a daily total, so it gets more decimal
+    /// places - at a low draw two would round it away to nothing.
+    /// </summary>
+    private string Rate(decimal perHour)
+    {
+        var text = perHour >= 1m ? perHour.ToString("F2") : perHour.ToString("F3");
+        var symbol = Symbol();
+        return symbol.Length > 0 ? $"{symbol}{text}" : $"{text} {_status?.Power.Currency}";
+    }
+
+    private string Symbol() => (_status?.Power.Currency ?? "USD") switch
+    {
+        "USD" => "$", "GBP" => "£", "EUR" => "€", _ => "",
+    };
+
+    private string FormatMoney(decimal amount)
+    {
+        var symbol = Symbol();
+        return symbol.Length > 0
+            ? $"{symbol}{amount:F2}"
+            : $"{amount:F2} {_status?.Power.Currency ?? "USD"}";
+    }
+}

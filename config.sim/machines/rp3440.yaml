@@ -1,0 +1,24 @@
+id: rp3440
+name: HP rp3440
+description: PA-RISC 8800 server running HP-UX 11.31
+tags: [hpux, parisc]
+
+pdu:
+  id: sim-pdu
+  outlet: 1
+
+mp:
+  type: hp-mp
+  host: 127.0.0.1
+  port: 2301
+  username: Admin
+  password: Admin
+
+serial:
+  server: sim-console
+  port: 1
+
+addresses:
+  - label: primary
+    ip: 10.0.0.31
+    hostname: rp3440.lab

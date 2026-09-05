@@ -1,0 +1,11 @@
+# One file per physical PDU. The file name is the id used by machines.
+id: rack1
+name: Rack 1 PDU
+# Must match a file in pdu-types/ - that is where the OIDs live.
+type: apc-ap7900
+host: 10.0.0.20
+port: 161
+community:
+  read: public
+  write: private
+outletCount: 8

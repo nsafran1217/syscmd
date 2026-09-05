@@ -1,0 +1,61 @@
+@page "/events"
+@inherits LivePage
+
+@inject EventLog Events
+@inject ConfigStore Config
+
+<PageTitle>Event Log</PageTitle>
+
+<CdeWindow Title="Event Log">
+    <div class="spread" style="margin-bottom:10px;">
+        <h1 style="margin:0; font-size:20px;">Event Log</h1>
+        <div class="btn-row">
+            <select @bind="_level" @bind:after="RefreshNowAsync">
+                <option value="Debug">All levels</option>
+                <option value="Info">Info and above</option>
+                <option value="Warning">Warnings and errors</option>
+                <option value="Error">Errors only</option>
+            </select>
+            <select @bind="_machine" @bind:after="RefreshNowAsync">
+                <option value="">All machines</option>
+                @foreach (var m in Config.Current.Machines.Values.OrderBy(m => m.Name))
+                {
+                    <option value="@m.Id">@m.Name</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <p class="muted" style="font-size:12px;">
+        Kept in memory for the current session and appended to
+        <span class="mono">data/events/YYYY-MM-DD.jsonl</span>. Management-processor sessions attach
+        their full transcript, which is usually where a failed power operation explains itself.
+    </p>
+
+    <EventLogView Events="_events" />
+</CdeWindow>
+
+@code {
+    private IReadOnlyList<LabEvent> _events = [];
+    private string _level = "Debug";
+    private string _machine = "";
+
+    protected override TimeSpan RefreshInterval => TimeSpan.FromSeconds(3);
+
+    protected override Task LoadAsync(CancellationToken ct)
+    {
+        _events = Events.Recent(400, Enum.Parse<EventLevel>(_level),
+            string.IsNullOrEmpty(_machine) ? null : _machine);
+        return Task.CompletedTask;
+    }
+
+    protected override void Subscribe() => Events.Written += OnWritten;
+    protected override void Unsubscribe() => Events.Written -= OnWritten;
+
+    private void OnWritten(LabEvent evt)
+    {
+        _events = Events.Recent(400, Enum.Parse<EventLevel>(_level),
+            string.IsNullOrEmpty(_machine) ? null : _machine);
+        RequestRender();
+    }
+}

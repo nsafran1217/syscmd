@@ -1,0 +1,129 @@
+@page "/config/groups"
+
+@inject ConfigStore Config
+@inject EventLog Events
+
+<PageTitle>Groups - Configuration</PageTitle>
+
+<CdeWindow Title="Configuration - Groups">
+    <div class="spread" style="margin-bottom:10px;">
+        <h1 style="margin:0; font-size:20px;">Machine Groups</h1>
+        <div class="btn-row">
+            <a class="cde-btn small" href="/config">Back</a>
+            <button class="cde-btn small" @onclick="AddGroup">New group</button>
+        </div>
+    </div>
+
+    <p class="muted" style="font-size:12px;">
+        A group powers its machines on in the listed order and off in reverse, waiting the stagger
+        interval between each. All groups live in a single <span class="mono">groups.yaml</span>,
+        so they are saved together.
+    </p>
+
+    @if (_groups.Count == 0)
+    {
+        <p class="muted">No groups yet.</p>
+    }
+
+    @foreach (var group in _groups)
+    {
+        <div class="cde-panel">
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:0 16px;">
+                <label><span>Id</span><input type="text" @bind="group.Id" /></label>
+                <label><span>Name</span><input type="text" @bind="group.Name" /></label>
+                <label><span>Stagger (seconds)</span><input type="number" min="0" @bind="group.StaggerSeconds" /></label>
+            </div>
+
+            <div style="margin-bottom:8px;">
+                <div class="muted" style="font-size:11px; margin-bottom:4px;">Members, in power-on order</div>
+                @foreach (var (machineId, index) in group.Machines.Select((m, i) => (m, i)))
+                {
+                    <div class="btn-row" style="margin-bottom:4px;">
+                        <select value="@machineId" @onchange="e => SetMember(group, index, e.Value?.ToString())">
+                            @foreach (var m in Config.Current.Machines.Values.OrderBy(m => m.Name))
+                            {
+                                <option value="@m.Id">@m.Name (@m.Id)</option>
+                            }
+                        </select>
+                        <button class="cde-btn small" disabled="@(index == 0)"
+                                @onclick="() => Move(group, index, -1)">Up</button>
+                        <button class="cde-btn small" disabled="@(index == group.Machines.Count - 1)"
+                                @onclick="() => Move(group, index, 1)">Down</button>
+                        <button class="cde-btn small" @onclick="() => group.Machines.RemoveAt(index)">Remove</button>
+                    </div>
+                }
+                <button class="cde-btn small" @onclick="() => AddMember(group)">Add machine</button>
+            </div>
+
+            <button class="cde-btn small danger" @onclick="() => _groups.Remove(group)">Delete group</button>
+        </div>
+    }
+
+    <div class="btn-row">
+        <button class="cde-btn" @onclick="SaveAsync">Save all groups</button>
+        <button class="cde-btn" @onclick="Reload">Discard changes</button>
+        @if (_message is { } msg)
+        {
+            <span class="muted">@msg</span>
+        }
+    </div>
+</CdeWindow>
+
+@code {
+    private List<GroupConfig> _groups = [];
+    private string? _message;
+
+    protected override void OnInitialized() => Reload();
+
+    private void Reload()
+    {
+        // Deep copy so Discard really discards.
+        _groups = [.. Config.Current.Groups.Select(g => new GroupConfig
+        {
+            Id = g.Id,
+            Name = g.Name,
+            StaggerSeconds = g.StaggerSeconds,
+            Machines = [.. g.Machines],
+        })];
+        _message = null;
+    }
+
+    private void AddGroup() => _groups.Add(new GroupConfig { Id = "new-group", Name = "New group", StaggerSeconds = 10 });
+
+    private void AddMember(GroupConfig group)
+    {
+        var next = Config.Current.Machines.Keys.FirstOrDefault(id => !group.Machines.Contains(id))
+                   ?? Config.Current.Machines.Keys.FirstOrDefault();
+        if (next is not null) group.Machines.Add(next);
+    }
+
+    private void SetMember(GroupConfig group, int index, string? machineId)
+    {
+        if (machineId is not null && index < group.Machines.Count) group.Machines[index] = machineId;
+    }
+
+    private void Move(GroupConfig group, int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= group.Machines.Count) return;
+        (group.Machines[index], group.Machines[target]) = (group.Machines[target], group.Machines[index]);
+    }
+
+    private Task SaveAsync()
+    {
+        var blank = _groups.FirstOrDefault(g => string.IsNullOrWhiteSpace(g.Id));
+        if (blank is not null) { _message = "Every group needs an id."; return Task.CompletedTask; }
+
+        var duplicate = _groups.GroupBy(g => g.Id, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
+        if (duplicate is not null) { _message = $"Duplicate group id '{duplicate.Key}'."; return Task.CompletedTask; }
+
+        try
+        {
+            Config.SaveGroups(_groups);
+            Events.Info("config", $"Groups saved from the GUI ({_groups.Count} groups)");
+            _message = $"Saved at {DateTime.Now:HH:mm:ss}";
+        }
+        catch (Exception ex) { _message = $"Could not save: {ex.Message}"; }
+        return Task.CompletedTask;
+    }
+}

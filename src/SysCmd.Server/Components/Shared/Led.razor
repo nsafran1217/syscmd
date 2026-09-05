@@ -1,0 +1,17 @@
+@* Status lamp: green on, dark off, grey unknown, amber pulsing while a job runs. *@
+
+<span class="cde-led @CssClass" title="@Label" role="img" aria-label="@Label"></span>
+
+@code {
+    [Parameter] public PowerState State { get; set; } = PowerState.Unknown;
+    [Parameter] public bool Busy { get; set; }
+
+    private string CssClass => Busy ? "busy" : State switch
+    {
+        PowerState.On => "on",
+        PowerState.Off => "",
+        _ => "unknown",
+    };
+
+    private string Label => Busy ? "Working" : State.ToString();
+}

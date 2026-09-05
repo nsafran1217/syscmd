@@ -1,0 +1,22 @@
+groups:
+  - id: hp-ia64
+    name: HP IA64
+    # Powered on in this order; powered off in reverse.
+    machines:
+      - rx2660
+    # Seconds between starting each member, to spread inrush current.
+    staggerSeconds: 10
+
+  - id: hp-all
+    name: All HP
+    machines:
+      - rp3440
+      - rx2660
+    staggerSeconds: 8
+
+  - id: dec
+    name: Digital
+    machines:
+      - alpha1000
+      - vax3100
+    staggerSeconds: 5

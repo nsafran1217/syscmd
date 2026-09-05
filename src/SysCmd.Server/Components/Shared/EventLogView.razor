@@ -1,0 +1,32 @@
+@* Scrollback of recent events, newest first, with expandable detail for MP transcripts. *@
+
+<div class="event-log">
+    @if (Events.Count == 0)
+    {
+        <div class="muted">Nothing logged yet.</div>
+    }
+    else
+    {
+        @foreach (var e in Events)
+        {
+            <div class="row @e.Level.ToString().ToLowerInvariant()">
+                <span class="time">@e.Timestamp.ToString("HH:mm:ss")</span>
+                <span class="cat">@e.Category</span>
+                <span class="msg">
+                    @e.Message
+                    @if (!string.IsNullOrWhiteSpace(e.Detail))
+                    {
+                        <details>
+                            <summary>transcript</summary>
+                            <pre>@e.Detail</pre>
+                        </details>
+                    }
+                </span>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<LabEvent> Events { get; set; } = [];
+}

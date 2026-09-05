@@ -1,0 +1,9 @@
+id: sim-pdu
+name: Simulated Rack PDU
+type: apc-ap7900
+host: 127.0.0.1
+port: 16100
+community:
+  read: public
+  write: private
+outletCount: 8

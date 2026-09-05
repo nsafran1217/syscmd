@@ -1,0 +1,30 @@
+@* Modal confirmation styled as a CDE dialog. Rendered only when Visible is set. *@
+
+@if (Visible)
+{
+    <div class="cde-overlay" @onclick="Cancel">
+        <div class="cde-dialog" @onclick:stopPropagation="true" role="dialog" aria-modal="true">
+            <div class="dialog-title">@Title</div>
+            <div class="dialog-body">
+                @ChildContent
+            </div>
+            <div class="dialog-buttons">
+                <button class="cde-btn" @onclick="Cancel">Cancel</button>
+                <button class="cde-btn @(Destructive ? "danger" : "")" @onclick="Confirm">@ConfirmLabel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public string Title { get; set; } = "Confirm";
+    [Parameter] public string ConfirmLabel { get; set; } = "OK";
+    [Parameter] public bool Destructive { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private Task Confirm() => OnConfirm.InvokeAsync();
+    private Task Cancel() => OnCancel.InvokeAsync();
+}

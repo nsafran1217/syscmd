@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SysCmd.Core/SysCmd.Core.csproj" />
+    <Project Path="src/SysCmd.Server/SysCmd.Server.csproj" />
+    <Project Path="src/SysCmd.Simulator/SysCmd.Simulator.csproj" />
+  </Folder>
+</Solution>

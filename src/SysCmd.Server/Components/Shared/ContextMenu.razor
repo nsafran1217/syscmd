@@ -1,0 +1,40 @@
+@* CDE-style right-click menu, positioned at the pointer. *@
+
+@if (Visible)
+{
+    @* Full-screen catcher so any click or right-click elsewhere dismisses the menu. *@
+    <div class="cde-overlay" style="background:transparent"
+         @onclick="Close" @oncontextmenu="Close" @oncontextmenu:preventDefault="true">
+        <div class="cde-contextmenu" style="@PositionStyle"
+             @onclick:stopPropagation="true" role="menu">
+            @if (!string.IsNullOrEmpty(Title))
+            {
+                <div class="menu-title">@Title</div>
+            }
+            @ChildContent
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public double X { get; set; }
+    [Parameter] public double Y { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    // Anchor to whichever corner keeps the menu on screen; the viewport size is not
+    // known server-side, so bias away from the edges using the click position alone.
+    private string PositionStyle
+    {
+        get
+        {
+            var left = Math.Max(X, 4).ToString("F0", CultureInfo.InvariantCulture);
+            var top = Math.Max(Y, 4).ToString("F0", CultureInfo.InvariantCulture);
+            return $"left:{left}px; top:{top}px; position:fixed; max-height:80vh; overflow:auto;";
+        }
+    }
+
+    private Task Close() => OnClose.InvokeAsync();
+}

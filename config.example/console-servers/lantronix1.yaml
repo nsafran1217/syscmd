@@ -1,0 +1,15 @@
+# A terminal server exposing serial ports as TCP ports.
+id: lantronix1
+name: Lantronix EDS16PR
+host: 10.0.0.50
+# Physical serial port number -> TCP port that reaches it.
+# Most units use a fixed base plus the port number; the GUI can generate a range.
+ports:
+  1: 2001
+  2: 2002
+  3: 2003
+  4: 2004
+  5: 2005
+  6: 2006
+  7: 2007
+  8: 2008

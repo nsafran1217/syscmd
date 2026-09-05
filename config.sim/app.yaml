@@ -1,0 +1,20 @@
+# Global settings. Everything here is editable from the GUI under Configuration.
+site:
+  name: Simulated Lab
+  theme: dec
+
+power:
+  # How often every PDU is polled for its load reading.
+  pollIntervalSeconds: 15
+  # Used to turn kWh into money on the status overview.
+  costPerKwh: 0.14
+  currency: USD
+
+orchestration:
+  # Pause after switching an outlet on before probing the management processor.
+  outletSettleSeconds: 3
+  # How long to wait for an MP to answer after outlet power is applied.
+  powerOnMpTimeoutSeconds: 90
+  # How long to wait for a machine to confirm it is off. On timeout the outlet is LEFT ON.
+  powerOffConfirmTimeoutSeconds: 90
+  powerOffPollIntervalSeconds: 8

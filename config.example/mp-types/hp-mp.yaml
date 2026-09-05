@@ -1,0 +1,88 @@
+# HP Integrity Management Processor (MP / iLO for Integrity).
+#
+# Script syntax:
+#   expect  - substring to wait for, or /regex/ with optional i, m, s flags
+#   send    - text to transmit; a carriage return is appended unless noNewline is set.
+#             Supports {username}, {password}, \r \n \t \e \xNN and ^X control escapes.
+#   match   - on a step, tests the output that arrived while waiting for its expect,
+#             and reports the machine's power state. Only the "status" task needs this.
+name: HP Integrity MP
+transport: telnet
+defaultPort: 23
+
+timeouts:
+  expectSeconds: 20
+  connectSeconds: 10
+
+# The MP's idle prompt, for reference and for the GUI to display.
+prompt: "MP>"
+
+# An HP Integrity MP accepts several telnet logins at once, so a console window open on it
+# does not have to block a power job. Only applies to a direct address: reached through a
+# console server it is still one serial wire.
+allowsConcurrentSessions: true
+
+login:
+  - expect: "login:"
+    send: "{username}"
+  - expect: "password:"
+    send: "{password}"
+
+tasks:
+  poweron:
+    - expect: "MP>"
+      send: "cm"
+    - expect: "CM:"
+      send: "pc"
+    - expect: "Quit:"
+      send: "on"
+    - expect: "(Y/"
+      send: "y"
+    - expect: "CM:"
+      send: "ma"
+
+  # "g" is the graceful shutdown option; use "off" here for a hard power cut instead.
+  poweroff:
+    - expect: "MP>"
+      send: "cm"
+    - expect: "CM:"
+      send: "pc"
+    - expect: "Quit:"
+      send: "g"
+    - expect: "(Y/"
+      send: "y"
+    - expect: "CM:"
+      send: "ma"
+
+  reset:
+    - expect: "MP>"
+      send: "cm"
+    - expect: "CM:"
+      send: "pc"
+    - expect: "Quit:"
+      send: "off"
+    - expect: "(Y/"
+      send: "y"
+    - expect: "CM:"
+      send: "pc"
+    - expect: "Quit:"
+      send: "on"
+    - expect: "(Y/"
+      send: "y"
+    - expect: "CM:"
+      send: "ma"
+
+  status:
+    - expect: "MP>"
+      send: "cm"
+    - expect: "CM:"
+      send: "ps"
+    # Waiting for the prompt after "ps" captures the power line it printed on the way.
+    - expect: "CM:"
+      match:
+        on: "/System Power[^:]*:\\s*on/i"
+        off: "/System Power[^:]*:\\s*off/i"
+      send: "ma"
+
+logout:
+  - send: "x"

@@ -1,0 +1,187 @@
+@page "/config"
+
+@inject ConfigStore Config
+@inject EventLog Events
+
+<PageTitle>Configuration</PageTitle>
+
+<CdeWindow Title="Configuration">
+    <h1 style="margin:0 0 12px; font-size:20px;">Configuration</h1>
+
+    <p class="muted" style="font-size:12px;">
+        YAML configuration stored at <span class="mono">@Config.Paths.Root</span>.
+    </p>
+
+    @if (_issues.Count > 0)
+    {
+        <div class="cde-panel">
+            <h3>Problems</h3>
+            @foreach (var issue in _issues)
+            {
+                <div style="margin-bottom:4px;">
+                    <span class="badge @(issue.Severity == ConfigIssueSeverity.Error ? "error" : "warn")">
+                        @issue.Severity
+                    </span>
+                    <span class="mono">@issue.File</span> - @issue.Message
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <p><span class="badge">OK</span> No configuration problems.</p>
+    }
+
+    <div class="stat-row" style="margin-top:14px;">
+        <a class="stat" href="/config/machines" style="text-decoration:none;">
+            <div class="stat-label">Machines</div>
+            <div class="stat-value">@Config.Current.Machines.Count</div>
+            <div class="stat-note">outlets, MPs, consoles, addresses</div>
+        </a>
+        <a class="stat" href="/config/pdus" style="text-decoration:none;">
+            <div class="stat-label">PDUs</div>
+            <div class="stat-value">@Config.Current.Pdus.Count</div>
+            <div class="stat-note">@Config.Current.PduTypes.Count driver types</div>
+        </a>
+        <a class="stat" href="/config/groups" style="text-decoration:none;">
+            <div class="stat-label">Groups</div>
+            <div class="stat-value">@Config.Current.Groups.Length</div>
+            <div class="stat-note">bulk power control</div>
+        </a>
+        <a class="stat" href="/config/console-servers" style="text-decoration:none;">
+            <div class="stat-label">Console servers</div>
+            <div class="stat-value">@Config.Current.ConsoleServers.Count</div>
+            <div class="stat-note">serial port mappings</div>
+        </a>
+        <a class="stat" href="/config/raw" style="text-decoration:none;">
+            <div class="stat-label">YAML files</div>
+            <div class="stat-value">@_fileCount</div>
+            <div class="stat-note">edit any file directly</div>
+        </a>
+    </div>
+</CdeWindow>
+
+@* ------------------------------------------------------------ global settings *@
+<CdeWindow Title="Settings - app.yaml">
+    <h2 style="margin:0 0 12px; font-size:16px;">Global Settings</h2>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0 16px;">
+        <label>
+            <span>Site name</span>
+            <input type="text" @bind="_app.Site.Name" />
+        </label>
+        <label>
+            <span>PDU poll interval (seconds)</span>
+            <input type="number" min="5" @bind="_app.Power.PollIntervalSeconds" />
+        </label>
+        <label>
+            <span>Cost per kWh</span>
+            <input type="number" step="0.001" min="0" @bind="_app.Power.CostPerKwh" />
+        </label>
+        <label>
+            <span>Currency</span>
+            <input type="text" @bind="_app.Power.Currency" />
+        </label>
+    </div>
+
+    <div class="cde-panel">
+        <h3>Power sequencing</h3>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0 16px;">
+            <label>
+                <span>Outlet settle before probing MP (s)</span>
+                <input type="number" min="0" @bind="_app.Orchestration.OutletSettleSeconds" />
+            </label>
+            <label>
+                <span>Wait for MP after power on (s)</span>
+                <input type="number" min="10" @bind="_app.Orchestration.PowerOnMpTimeoutSeconds" />
+            </label>
+            <label>
+                <span>Wait for shutdown confirmation (s)</span>
+                <input type="number" min="10" @bind="_app.Orchestration.PowerOffConfirmTimeoutSeconds" />
+            </label>
+            <label>
+                <span>Shutdown poll interval (s)</span>
+                <input type="number" min="2" @bind="_app.Orchestration.PowerOffPollIntervalSeconds" />
+            </label>
+        </div>
+        <p class="muted" style="font-size:11px; margin:0;">
+            If a machine does not confirm it is powered down within the confirmation window, its
+            outlet is deliberately left on and the job fails.
+        </p>
+    </div>
+
+    <div class="btn-row">
+        <button class="cde-btn" @onclick="SaveAppAsync">Save settings</button>
+        <button class="cde-btn" @onclick="ReloadApp">Discard changes</button>
+        @if (_saved is { } msg)
+        {
+            <span class="muted">@msg</span>
+        }
+    </div>
+</CdeWindow>
+
+@code {
+    private AppConfig _app = new();
+    private string? _saved;
+
+    private IReadOnlyList<ConfigIssue> _issues => Config.Current.Issues;
+
+    private int _fileCount;
+
+    protected override void OnInitialized()
+    {
+        ReloadApp();
+        _fileCount = CountFiles();
+        Config.Changed += OnConfigChanged;
+    }
+
+    private void OnConfigChanged(ConfigSnapshot snapshot)
+    {
+        _fileCount = CountFiles();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private int CountFiles() =>
+        Directory.Exists(Config.Paths.Root)
+            ? Directory.GetFiles(Config.Paths.Root, "*.yaml", SearchOption.AllDirectories).Length
+            : 0;
+
+    /// <summary>Work on a copy so cancelling leaves the live config untouched.</summary>
+    private void ReloadApp()
+    {
+        var current = Config.Current.App;
+        _app = new AppConfig
+        {
+            Site = new SiteConfig { Name = current.Site.Name, Theme = current.Site.Theme },
+            Power = new PowerConfig
+            {
+                PollIntervalSeconds = current.Power.PollIntervalSeconds,
+                CostPerKwh = current.Power.CostPerKwh,
+                Currency = current.Power.Currency,
+            },
+            Orchestration = new OrchestrationConfig
+            {
+                OutletSettleSeconds = current.Orchestration.OutletSettleSeconds,
+                PowerOnMpTimeoutSeconds = current.Orchestration.PowerOnMpTimeoutSeconds,
+                PowerOffConfirmTimeoutSeconds = current.Orchestration.PowerOffConfirmTimeoutSeconds,
+                PowerOffPollIntervalSeconds = current.Orchestration.PowerOffPollIntervalSeconds,
+            },
+        };
+        _saved = null;
+    }
+
+    private Task SaveAppAsync()
+    {
+        try
+        {
+            Config.SaveApp(_app);
+            Events.Info("config", "Global settings updated from the GUI");
+            _saved = $"Saved at {DateTime.Now:HH:mm:ss}";
+        }
+        catch (Exception ex)
+        {
+            _saved = $"Could not save: {ex.Message}";
+        }
+        return Task.CompletedTask;
+    }
+}

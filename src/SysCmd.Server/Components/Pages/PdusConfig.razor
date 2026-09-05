@@ -1,0 +1,186 @@
+@page "/config/pdus"
+
+@inject ConfigStore Config
+@inject EventLog Events
+
+<PageTitle>PDUs - Configuration</PageTitle>
+
+<CdeWindow Title="Configuration - PDUs">
+    <div class="spread" style="margin-bottom:10px;">
+        <h1 style="margin:0; font-size:20px;">Power Distribution Units</h1>
+        <div class="btn-row">
+            <a class="cde-btn small" href="/config">Back</a>
+            <button class="cde-btn small" @onclick="NewPdu">New PDU</button>
+        </div>
+    </div>
+
+    <div class="table-scroll">
+        <table class="cde-table">
+            <thead>
+                <tr><th>Id</th><th>Name</th><th>Type</th><th>Address</th><th>Outlets</th><th style="width:1%"></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var p in Config.Current.Pdus.Values.OrderBy(p => p.Id))
+                {
+                    <tr>
+                        <td class="mono">@p.Id</td>
+                        <td>@p.Name</td>
+                        <td class="muted">@p.Type</td>
+                        <td class="mono muted">@p.Host:@p.Port</td>
+                        <td class="muted">@p.OutletCount</td>
+                        <td>
+                            <div class="btn-row nowrap">
+                                <button class="cde-btn small" @onclick="() => Edit(p)">Edit</button>
+                                <button class="cde-btn small danger" @onclick="() => _deleting = p">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</CdeWindow>
+
+@if (_edit is { } pdu)
+{
+    <CdeWindow Title="@($"PDU - {(_isNew ? "new" : pdu.Id)}")">
+        <h2 style="margin:0 0 12px; font-size:16px;">@(_isNew ? "New PDU" : $"Editing {pdu.Id}")</h2>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0 16px;">
+            <label>
+                <span>Id (also the file name)</span>
+                <input type="text" @bind="pdu.Id" disabled="@(!_isNew)" />
+            </label>
+            <label><span>Name</span><input type="text" @bind="pdu.Name" /></label>
+            <label>
+                <span>Driver type</span>
+                <select @bind="pdu.Type">
+                    @foreach (var option in Config.Current.PduTypes.Values)
+                    {
+                        <option value="@option.Id">@option.Name</option>
+                    }
+                </select>
+            </label>
+            <label><span>Host or IP</span><input type="text" @bind="pdu.Host" /></label>
+            <label><span>SNMP port</span><input type="number" min="1" @bind="pdu.Port" /></label>
+            <label><span>Outlet count</span><input type="number" min="1" @bind="pdu.OutletCount" /></label>
+            <label><span>Read community</span><input type="text" @bind="pdu.Community.Read" /></label>
+            <label><span>Write community</span><input type="text" @bind="pdu.Community.Write" /></label>
+        </div>
+
+        @if (Config.Current.PduTypes.GetValueOrDefault(pdu.Type) is { } type)
+        {
+            <div class="cde-panel">
+                <h3>Driver: @type.Name</h3>
+                <p class="muted" style="font-size:11px; margin:0 0 6px;">
+                    OIDs come from <span class="mono">pdu-types/@(type.Id).yaml</span>. Edit that file
+                    to support a different PDU model - no code change is needed.
+                </p>
+                <table class="cde-table">
+                    <tbody>
+                        <tr><th>SNMP version</th><td class="mono">@type.Snmp.Version</td></tr>
+                        <tr><th>Outlet state</th><td class="mono">@type.Outlets.StateOid</td></tr>
+                        <tr><th>Outlet control</th><td class="mono">@type.Outlets.ControlOid</td></tr>
+                        <tr>
+                            <th>Commands</th>
+                            <td class="mono">@string.Join(", ", type.Outlets.Commands.Select(c => $"{c.Key}={c.Value}"))</td>
+                        </tr>
+                        <tr>
+                            <th>Load</th>
+                            <td class="mono">
+                                @(type.Power?.LoadOid ?? "(none - this PDU reports no power)")
+                                @if (type.Power is { LoadOid: not null })
+                                {
+                                    <span> (@type.Power.LoadUnit at @type.Power.NominalVolts V)</span>
+                                }
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <div class="btn-row">
+            <button class="cde-btn" @onclick="SaveAsync">Save PDU</button>
+            <button class="cde-btn" @onclick="() => _edit = null">Cancel</button>
+            @if (_message is { } msg)
+            {
+                <span class="muted">@msg</span>
+            }
+        </div>
+    </CdeWindow>
+}
+
+<ConfirmDialog Visible="_deleting is not null" Title="Delete PDU" ConfirmLabel="Delete" Destructive="true"
+               OnConfirm="DeleteAsync" OnCancel="() => { _deleting = null; }">
+    <p>
+        Delete <strong>@_deleting?.Name</strong>? Machines bound to its outlets will be flagged as
+        broken until they are pointed somewhere else.
+    </p>
+</ConfirmDialog>
+
+@code {
+    private PduConfig? _edit;
+    private PduConfig? _deleting;
+    private bool _isNew;
+    private string? _message;
+
+    private void NewPdu()
+    {
+        _edit = new PduConfig
+        {
+            Type = Config.Current.PduTypes.Keys.FirstOrDefault() ?? "",
+            OutletCount = 8,
+        };
+        _isNew = true;
+        _message = null;
+    }
+
+    private void Edit(PduConfig source)
+    {
+        _edit = new PduConfig
+        {
+            Id = source.Id,
+            Name = source.Name,
+            Type = source.Type,
+            Host = source.Host,
+            Port = source.Port,
+            OutletCount = source.OutletCount,
+            Community = new SnmpCommunity { Read = source.Community.Read, Write = source.Community.Write },
+        };
+        _isNew = false;
+        _message = null;
+    }
+
+    private Task SaveAsync()
+    {
+        if (_edit is not { } pdu) return Task.CompletedTask;
+        if (string.IsNullOrWhiteSpace(pdu.Id)) { _message = "An id is required."; return Task.CompletedTask; }
+
+        try
+        {
+            Config.SavePdu(pdu);
+            Events.Info("config", $"PDU '{pdu.Id}' saved from the GUI");
+            _message = $"Saved at {DateTime.Now:HH:mm:ss}";
+            _edit = null;
+        }
+        catch (Exception ex) { _message = $"Could not save: {ex.Message}"; }
+        return Task.CompletedTask;
+    }
+
+    private Task DeleteAsync()
+    {
+        var pdu = _deleting;
+        _deleting = null;
+        if (pdu is null) return Task.CompletedTask;
+
+        try
+        {
+            Config.DeletePdu(pdu.Id);
+            Events.Warn("config", $"PDU '{pdu.Id}' deleted from the GUI");
+            if (_edit?.Id == pdu.Id) _edit = null;
+        }
+        catch (Exception ex) { _message = $"Could not delete: {ex.Message}"; }
+        return Task.CompletedTask;
+    }
+}

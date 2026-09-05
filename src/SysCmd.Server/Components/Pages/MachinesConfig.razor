@@ -1,0 +1,428 @@
+@page "/config/machines"
+@using System.Net
+@using System.Net.Sockets
+
+@inject ConfigStore Config
+@inject EventLog Events
+
+<PageTitle>Machines - Configuration</PageTitle>
+
+<CdeWindow Title="Configuration - Machines">
+    <div class="spread" style="margin-bottom:10px;">
+        <h1 style="margin:0; font-size:20px;">Machines</h1>
+        <div class="btn-row">
+            <a class="cde-btn small" href="/config">Back</a>
+            <button class="cde-btn small" @onclick="NewMachine">New machine</button>
+        </div>
+    </div>
+
+    <div class="table-scroll">
+        <table class="cde-table">
+            <thead>
+                <tr>
+                    <th>Id</th><th>Name</th><th>Outlet</th><th>MP</th><th>Serial</th><th style="width:1%"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in Config.Current.Machines.Values.OrderBy(m => m.Id))
+                {
+                    <tr>
+                        <td class="mono">@m.Id</td>
+                        <td>@m.Name</td>
+                        <td class="muted nowrap">@(m.Pdu is null ? "-" : $"{m.Pdu.Id}:{m.Pdu.Outlet}")</td>
+                        <td class="muted nowrap">@(m.Mp?.Type ?? "-")</td>
+                        <td class="muted nowrap">@(m.Serial is null ? "-" : $"{m.Serial.Server}:{m.Serial.Port}")</td>
+                        <td>
+                            <div class="btn-row nowrap">
+                                <button class="cde-btn small" @onclick="() => Edit(m)">Edit</button>
+                                <button class="cde-btn small danger" @onclick="() => AskDelete(m)">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</CdeWindow>
+
+@if (_edit is { } machine)
+{
+    <CdeWindow Title="@($"Machine - {(_isNew ? "new" : machine.Id)}")">
+        <h2 style="margin:0 0 12px; font-size:16px;">@(_isNew ? "New machine" : $"Editing {machine.Id}")</h2>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0 16px;">
+            <label>
+                <span>Id (also the file name)</span>
+                <input type="text" @bind="machine.Id" disabled="@(!_isNew)" />
+            </label>
+            <label><span>Name</span><input type="text" @bind="machine.Name" /></label>
+            <label><span>Description</span><input type="text" @bind="machine.Description" /></label>
+            <label>
+                <span>Tags (comma separated)</span>
+                <input type="text" value="@string.Join(", ", machine.Tags)"
+                       @onchange="e => machine.Tags = SplitList(e.Value?.ToString())" />
+            </label>
+        </div>
+
+        <div class="cde-panel">
+            <h3>PDU outlet</h3>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0 16px;">
+                <label>
+                    <span>PDU</span>
+                    <select value="@(machine.Pdu?.Id ?? "")" @onchange="OnPduChanged">
+                        <option value="">(none)</option>
+                        @foreach (var pdu in Config.Current.Pdus.Values)
+                        {
+                            <option value="@pdu.Id">@pdu.Name (@pdu.OutletCount outlets)</option>
+                        }
+                    </select>
+                </label>
+                @if (machine.Pdu is { } bind)
+                {
+                    <label>
+                        <span>Outlet number</span>
+                        <input type="number" min="1" @bind="bind.Outlet" />
+                    </label>
+                }
+            </div>
+        </div>
+
+        <div class="cde-panel">
+            <h3>Management processor</h3>
+            <label>
+                <span>Type</span>
+                <select value="@(machine.Mp?.Type ?? "")" @onchange="OnMpTypeChanged">
+                    <option value="">(no management processor)</option>
+                    @foreach (var type in Config.Current.MpTypes.Values)
+                    {
+                        <option value="@type.Id">@type.Name</option>
+                    }
+                </select>
+            </label>
+
+            @if (machine.Mp is { } mp)
+            {
+                <label>
+                    <span>Reached by</span>
+                    <select value="@(mp.Via is null ? "direct" : "console")" @onchange="OnMpReachChanged">
+                        <option value="direct">Direct network address</option>
+                        <option value="console">Console server port</option>
+                    </select>
+                </label>
+
+                <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0 16px;">
+                    @if (mp.Via is { } via)
+                    {
+                        <label>
+                            <span>Console server</span>
+                            <select @bind="via.Server">
+                                @foreach (var cs in Config.Current.ConsoleServers.Values)
+                                {
+                                    <option value="@cs.Id">@cs.Name</option>
+                                }
+                            </select>
+                        </label>
+                        <label><span>Port</span><input type="number" min="1" @bind="via.Port" /></label>
+                    }
+                    else
+                    {
+                        <label><span>Host or IP</span><input type="text" @bind="mp.Host" /></label>
+                        <label>
+                            <span>TCP port (blank for the type default)</span>
+                            <input type="number" @bind="_mpPort" />
+                        </label>
+                    }
+                    <label><span>Username</span><input type="text" @bind="mp.Username" /></label>
+                    <label><span>Password</span><input type="text" @bind="mp.Password" /></label>
+                </div>
+                <p class="muted" style="font-size:11px; margin:0;">
+                    Credentials are written to the YAML file in plain text. Keep the config
+                    directory readable only by the account running syscmd.
+                </p>
+            }
+        </div>
+
+        <div class="cde-panel">
+            <h3>Serial console</h3>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0 16px;">
+                <label>
+                    <span>Console server</span>
+                    <select value="@(machine.Serial?.Server ?? "")" @onchange="OnSerialServerChanged">
+                        <option value="">(none)</option>
+                        @foreach (var cs in Config.Current.ConsoleServers.Values)
+                        {
+                            <option value="@cs.Id">@cs.Name</option>
+                        }
+                    </select>
+                </label>
+                @if (machine.Serial is { } serial)
+                {
+                    <label><span>Port</span><input type="number" min="1" @bind="serial.Port" /></label>
+                }
+            </div>
+        </div>
+
+        <div class="cde-panel">
+            <h3>Addresses</h3>
+            @foreach (var address in machine.Addresses)
+            {
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto auto; gap:8px; align-items:end;">
+                    <label style="margin:0;"><span>Label</span><input type="text" @bind="address.Label" /></label>
+                    <label style="margin:0;"><span>IP</span><input type="text" @bind="address.Ip" /></label>
+                    <label style="margin:0;"><span>Hostname</span><input type="text" @bind="address.Hostname" /></label>
+                    <button class="cde-btn small" title="Resolve the hostname and fill in the IP"
+                            disabled="@(_resolving == address)"
+                            @onclick="() => LookupAsync(address)">
+                        @(_resolving == address ? "..." : "Look up")
+                    </button>
+                    <button class="cde-btn small" @onclick="() => RemoveAddress(machine, address)">Remove</button>
+                </div>
+                <div class="muted" style="font-size:11px; margin:2px 0 8px;">
+                    @(_lookups.GetValueOrDefault(address) ?? "")
+                </div>
+            }
+            <button class="cde-btn small" @onclick="() => AddAddress(machine)">Add address</button>
+        </div>
+
+        <div class="btn-row">
+            <button class="cde-btn" @onclick="SaveAsync">Save machine</button>
+            <button class="cde-btn" @onclick="() => _edit = null">Cancel</button>
+            @if (_message is { } msg)
+            {
+                <span class="muted">@msg</span>
+            }
+        </div>
+    </CdeWindow>
+}
+
+<ConfirmDialog Visible="_deleting is not null"
+               Title="Delete machine"
+               ConfirmLabel="Delete"
+               Destructive="true"
+               OnConfirm="DeleteAsync"
+               OnCancel="() => { _deleting = null; }">
+    <p>
+        Delete <strong>@_deleting?.Name</strong>? Its YAML file is removed from the config
+        directory. Any group referencing it will be flagged as broken until you fix it.
+    </p>
+</ConfirmDialog>
+
+@code {
+    private MachineConfig? _edit;
+    private MachineConfig? _deleting;
+    private bool _isNew;
+    private string? _message;
+
+    /// <summary>Bound separately so a blank field can mean "use the type's default port".</summary>
+    private int? _mpPort;
+
+    /// <summary>Per-row outcome of the last DNS lookup, keyed by the address being edited.</summary>
+    private readonly Dictionary<MachineAddress, string> _lookups = [];
+    private MachineAddress? _resolving;
+
+    private void NewMachine()
+    {
+        _lookups.Clear();
+        _edit = new MachineConfig { Id = "", Name = "" };
+        _isNew = true;
+        _mpPort = null;
+        _message = null;
+    }
+
+    /// <summary>Edit a deep copy, so cancelling cannot leave half-applied edits in the snapshot.</summary>
+    private void Edit(MachineConfig source)
+    {
+        // The rows are cloned, so results keyed by the previous objects no longer apply.
+        _lookups.Clear();
+        _edit = Clone(source);
+        _isNew = false;
+        _mpPort = source.Mp?.Port;
+        _message = null;
+    }
+
+    private static MachineConfig Clone(MachineConfig m) => new()
+    {
+        Id = m.Id,
+        Name = m.Name,
+        Description = m.Description,
+        Tags = [.. m.Tags],
+        Pdu = m.Pdu is null ? null : new MachinePduBinding { Id = m.Pdu.Id, Outlet = m.Pdu.Outlet },
+        Mp = m.Mp is null ? null : new MachineMpConfig
+        {
+            Type = m.Mp.Type,
+            Host = m.Mp.Host,
+            Port = m.Mp.Port,
+            Username = m.Mp.Username,
+            Password = m.Mp.Password,
+            Via = m.Mp.Via is null ? null : new SerialPortBinding { Server = m.Mp.Via.Server, Port = m.Mp.Via.Port },
+        },
+        Serial = m.Serial is null ? null : new SerialPortBinding { Server = m.Serial.Server, Port = m.Serial.Port },
+        Addresses = [.. m.Addresses.Select(a => new MachineAddress { Label = a.Label, Ip = a.Ip, Hostname = a.Hostname })],
+    };
+
+    /// <summary>The first address on a machine is almost always the primary one, so name it.</summary>
+    private static void AddAddress(MachineConfig machine) =>
+        machine.Addresses.Add(new MachineAddress
+        {
+            Label = machine.Addresses.Count == 0 ? "primary" : null,
+        });
+
+    private void RemoveAddress(MachineConfig machine, MachineAddress address)
+    {
+        machine.Addresses.Remove(address);
+        _lookups.Remove(address);
+    }
+
+    /// <summary>
+    /// Resolve the row's hostname through the server's resolver and fill in the IP. The lookup
+    /// happens here rather than in the browser because a page cannot make a DNS query, and the
+    /// server is the machine that has to reach these addresses anyway.
+    /// </summary>
+    private async Task LookupAsync(MachineAddress address)
+    {
+        var host = address.Hostname?.Trim();
+        if (string.IsNullOrEmpty(host))
+        {
+            _lookups[address] = "Enter a hostname first.";
+            return;
+        }
+
+        _resolving = address;
+        _lookups[address] = $"Looking up {host}...";
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var found = await Dns.GetHostAddressesAsync(host, timeout.Token);
+
+            // Prefer IPv4: everything in this lab is addressed that way.
+            var chosen = found.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork)
+                         ?? found.FirstOrDefault();
+
+            if (chosen is null)
+            {
+                _lookups[address] = $"'{host}' resolved to nothing.";
+                return;
+            }
+
+            address.Ip = chosen.ToString();
+            _lookups[address] = found.Length > 1
+                ? $"Resolved to {chosen} ({found.Length} addresses; the rest were ignored)."
+                : $"Resolved to {chosen}.";
+        }
+        catch (OperationCanceledException)
+        {
+            _lookups[address] = $"Timed out resolving '{host}'.";
+        }
+        catch (SocketException ex)
+        {
+            _lookups[address] = $"Could not resolve '{host}': {ex.Message}";
+        }
+        finally
+        {
+            _resolving = null;
+        }
+    }
+
+    private static List<string> SplitList(string? value) =>
+        [.. (value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    private void OnPduChanged(ChangeEventArgs e)
+    {
+        if (_edit is null) return;
+        var id = e.Value?.ToString() ?? "";
+        _edit.Pdu = string.IsNullOrEmpty(id) ? null : new MachinePduBinding { Id = id, Outlet = _edit.Pdu?.Outlet ?? 1 };
+    }
+
+    private void OnMpTypeChanged(ChangeEventArgs e)
+    {
+        if (_edit is null) return;
+        var type = e.Value?.ToString() ?? "";
+        if (string.IsNullOrEmpty(type)) { _edit.Mp = null; return; }
+        _edit.Mp ??= new MachineMpConfig();
+        _edit.Mp.Type = type;
+    }
+
+    private void OnMpReachChanged(ChangeEventArgs e)
+    {
+        if (_edit?.Mp is not { } mp) return;
+        if (e.Value?.ToString() == "console")
+        {
+            mp.Host = null;
+            mp.Port = null;
+            mp.Via ??= new SerialPortBinding
+            {
+                Server = Config.Current.ConsoleServers.Keys.FirstOrDefault() ?? "",
+                Port = 1,
+            };
+        }
+        else
+        {
+            mp.Via = null;
+        }
+    }
+
+    private void OnSerialServerChanged(ChangeEventArgs e)
+    {
+        if (_edit is null) return;
+        var id = e.Value?.ToString() ?? "";
+        _edit.Serial = string.IsNullOrEmpty(id)
+            ? null
+            : new SerialPortBinding { Server = id, Port = _edit.Serial?.Port ?? 1 };
+    }
+
+    private Task SaveAsync()
+    {
+        if (_edit is not { } machine) return Task.CompletedTask;
+
+        if (string.IsNullOrWhiteSpace(machine.Id))
+        {
+            _message = "An id is required; it becomes the file name.";
+            return Task.CompletedTask;
+        }
+
+        if (machine.Mp is { Via: null } mp) mp.Port = _mpPort;
+
+        try
+        {
+            Config.SaveMachine(machine);
+            Events.Info("config", $"Machine '{machine.Id}' saved from the GUI");
+
+            var problems = Config.Current.Issues
+                .Where(i => i.Severity == ConfigIssueSeverity.Error && i.File.EndsWith($"{machine.Id}.yaml"))
+                .ToList();
+
+            _message = problems.Count > 0
+                ? "Saved, but: " + string.Join(" ", problems.Select(p => p.Message))
+                : $"Saved at {DateTime.Now:HH:mm:ss}";
+
+            if (problems.Count == 0) _edit = null;
+        }
+        catch (Exception ex)
+        {
+            _message = $"Could not save: {ex.Message}";
+        }
+        return Task.CompletedTask;
+    }
+
+    private void AskDelete(MachineConfig machine) => _deleting = machine;
+
+    private Task DeleteAsync()
+    {
+        var machine = _deleting;
+        _deleting = null;
+        if (machine is null) return Task.CompletedTask;
+
+        try
+        {
+            Config.DeleteMachine(machine.Id);
+            Events.Warn("config", $"Machine '{machine.Id}' deleted from the GUI");
+            if (_edit?.Id == machine.Id) _edit = null;
+        }
+        catch (Exception ex)
+        {
+            _message = $"Could not delete: {ex.Message}";
+        }
+        return Task.CompletedTask;
+    }
+}

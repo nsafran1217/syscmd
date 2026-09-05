@@ -1,0 +1,131 @@
+@inherits LayoutComponentBase
+@implements IAsyncDisposable
+@inject ConfigStore Config
+@inject IJSRuntime JS
+
+@*
+    The top strip is a sibling of the shell, not a child of the content column: the content
+    column declares a CSS container, which makes it a containing block for fixed positioning
+    and would pin the bar to that column instead of the viewport.
+*@
+<header class="app-topbar">
+    <button type="button" class="cde-btn hamburger" @onclick="ToggleNav"
+            aria-expanded="@(IsNavShowing ? "true" : "false")"
+            aria-label="@(IsNavShowing ? "Hide navigation" : "Show navigation")"
+            title="@(IsNavShowing ? "Hide navigation" : "Show navigation")">
+        <span></span><span></span><span></span>
+    </button>
+    <span class="topbar-title">@Config.Current.App.Site.Name</span>
+</header>
+
+<div class="app-shell @ShellClass">
+
+    <NavPanel ConfigErrors="@ErrorCount"
+              ShowClose="@_isNarrow"
+              OnClose="HideNav" />
+
+    @* Only rendered while the panel is a drawer; the stylesheet hides it on wide screens. *@
+    @if (_state == NavState.Open)
+    {
+        <button type="button" class="nav-backdrop" aria-label="Close navigation" @onclick="HideNav"></button>
+    }
+
+    <main class="app-main">
+    <div class="app-content">
+        @Body
+    </div>
+    </main>
+
+    @* Console windows float above the page and outlive navigation. *@
+    <ConsoleWindowHost />
+</div>
+
+@code {
+    /// <summary>
+    /// Auto means nobody has chosen, so the stylesheet follows the viewport. Once the user picks,
+    /// the choice sticks - including across reloads - which is what makes it stay put on desktop.
+    /// </summary>
+    private enum NavState { Auto, Open, Closed }
+
+    private NavState _state = NavState.Auto;
+    private bool _isNarrow;
+    private bool _restored;
+    private DotNetObjectReference<MainLayout>? _self;
+
+    private string ShellClass => _state switch
+    {
+        NavState.Open => "nav-open",
+        NavState.Closed => "nav-closed",
+        _ => "nav-auto",
+    };
+
+    /// <summary>Whether the panel is actually on screen, for the toggle's label.</summary>
+    private bool IsNavShowing => _state switch
+    {
+        NavState.Open => true,
+        NavState.Closed => false,
+        _ => !_isNarrow,
+    };
+
+    private int ErrorCount => Config.Current.Issues.Count(i => i.Severity == ConfigIssueSeverity.Error);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _restored || !RendererInfo.IsInteractive) return;
+        _restored = true;
+
+        try
+        {
+            _self = DotNetObjectReference.Create(this);
+            _isNarrow = !await JS.InvokeAsync<bool>("syscmdUi.watchViewport", _self);
+
+            var stored = await JS.InvokeAsync<string?>("syscmdUi.readNavState");
+            _state = stored switch
+            {
+                "open" => NavState.Open,
+                "closed" => NavState.Closed,
+                _ => NavState.Auto,
+            };
+
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { /* the browser went away mid-restore */ }
+    }
+
+    /// <summary>Kept in step with the viewport, so crossing the breakpoint updates the drawer.</summary>
+    [JSInvokable]
+    public void OnViewportChanged(bool wide)
+    {
+        _isNarrow = !wide;
+        StateHasChanged();
+    }
+
+    private async Task ToggleNav()
+    {
+        _state = IsNavShowing ? NavState.Closed : NavState.Open;
+        await PersistAsync();
+    }
+
+    private async Task HideNav()
+    {
+        _state = NavState.Closed;
+        await PersistAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("syscmdUi.unwatchViewport"); }
+        catch (JSDisconnectedException) { /* the browser already went away */ }
+        catch (InvalidOperationException) { /* torn down before interop was available */ }
+        _self?.Dispose();
+    }
+
+    private async Task PersistAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("syscmdUi.writeNavState", _state == NavState.Open ? "open" : "closed");
+        }
+        catch (JSDisconnectedException) { /* the preference is a convenience, not state we need */ }
+    }
+}

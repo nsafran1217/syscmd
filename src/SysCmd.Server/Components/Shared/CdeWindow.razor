@@ -1,0 +1,258 @@
+@* A CDE/Motif window frame drawn in CSS: title bar with working boxes, optional menu
+   bar, and a sunken client area. Used both for the page's stacked windows and for the
+   floating console windows. *@
+
+<div class="cde-window @(IsShaded ? "shaded" : "") @(Maximised ? "maximised" : "") @(Floating && !Active ? "inactive" : "") @Class"
+     id="@ElementId" style="@Style" @onmousedown="Activate">
+
+    <div class="cde-titlebar" data-cw-drag="@(Floating ? "1" : null)"
+         @ondblclick="OnTitleDoubleClick">
+
+        @* Motif's window-menu box. Click opens it; double-click closes the window. *@
+        <div class="menu-anchor">
+            <button type="button" class="cw-box cw-menu-btn" title="Window menu"
+                    aria-label="Window menu" aria-haspopup="true"
+                    @onclick="ToggleWindowMenu" @onclick:stopPropagation="true"
+                    @ondblclick="CloseIfPossible" @ondblclick:stopPropagation="true">
+                <span class="glyph"></span>
+            </button>
+
+            @if (_windowMenuOpen)
+            {
+                <div class="cde-dropdown" @onclick:stopPropagation="true">
+                    <button type="button" @onclick="Restore" disabled="@(!IsShaded && !Maximised)">Restore</button>
+                    <button type="button" @onclick="ToggleShade" disabled="@(!CanMinimise || IsShaded)">Minimise</button>
+                    <button type="button" @onclick="ToggleMaximise" disabled="@(!CanMaximise || Maximised)">Maximise</button>
+                    <hr />
+                    <button type="button" @onclick="CloseIfPossible" disabled="@(!CanClose)">
+                        Close<span class="accel">Alt+F4</span>
+                    </button>
+                </div>
+            }
+        </div>
+
+        <span class="cw-title">@Title</span>
+
+        @if (CanMinimise)
+        {
+            <button type="button" class="cw-box cw-min"
+                    title="@(IsShaded ? "Unroll" : "Roll up")" aria-label="@(IsShaded ? "Unroll" : "Roll up")"
+                    @onclick="ToggleShade" @onclick:stopPropagation="true">
+                <span class="glyph"></span>
+            </button>
+        }
+
+        @if (CanMaximise)
+        {
+            <button type="button" class="cw-box cw-max"
+                    title="@(Maximised ? "Restore" : "Maximise")" aria-label="@(Maximised ? "Restore" : "Maximise")"
+                    @onclick="ToggleMaximise" @onclick:stopPropagation="true">
+                <span class="glyph"></span>
+            </button>
+        }
+    </div>
+
+    @if (Menus is { Count: > 0 })
+    {
+        <div class="cde-menubar">
+            @foreach (var menu in Menus)
+            {
+                var isOpen = _openMenu == menu.Label;
+                <div class="menu-anchor">
+                    <button type="button" class="@(isOpen ? "open" : "")"
+                            aria-haspopup="true" aria-expanded="@(isOpen ? "true" : "false")"
+                            @onclick="() => ToggleMenu(menu.Label)" @onclick:stopPropagation="true">
+                        @Mnemonic(menu.Label, menu.MnemonicIndex)
+                    </button>
+
+                    @if (isOpen)
+                    {
+                        <div class="cde-dropdown" @onclick:stopPropagation="true">
+                            @foreach (var item in menu.Items)
+                            {
+                                @if (item.IsSeparator)
+                                {
+                                    <hr />
+                                }
+                                else
+                                {
+                                    <button type="button" disabled="@item.Disabled"
+                                            @onclick="() => RunAsync(item)">
+                                        @Mnemonic(item.Label, item.MnemonicIndex)
+                                        @if (item.Accelerator is { Length: > 0 } accel)
+                                        {
+                                            <span class="accel">@accel</span>
+                                        }
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            <span class="spacer"></span>
+            @if (HelpMenu is { } help)
+            {
+                var helpOpen = _openMenu == help.Label;
+                <div class="menu-anchor">
+                    <button type="button" class="@(helpOpen ? "open" : "")"
+                            @onclick="() => ToggleMenu(help.Label)" @onclick:stopPropagation="true">
+                        @Mnemonic(help.Label, help.MnemonicIndex)
+                    </button>
+                    @if (helpOpen)
+                    {
+                        <div class="cde-dropdown align-right" @onclick:stopPropagation="true">
+                            @foreach (var item in help.Items)
+                            {
+                                @if (item.IsSeparator)
+                                {
+                                    <hr />
+                                }
+                                else
+                                {
+                                    <button type="button" disabled="@item.Disabled"
+                                            @onclick="() => RunAsync(item)">@item.Label</button>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <div class="window-content">
+        @ChildContent
+    </div>
+
+    @if (Floating)
+    {
+        @* Always in the DOM: it is hidden by CSS while rolled up or maximised, because
+           removing it would discard the drag listeners bound to it. *@
+        <div class="cw-grip" data-cw-resize="1" title="Resize"></div>
+    }
+</div>
+
+@* Any click elsewhere dismisses an open pull-down, the way a menu bar should behave. *@
+@if (_openMenu is not null || _windowMenuOpen)
+{
+    <div class="cde-overlay" style="background:transparent; z-index:59"
+         @onclick="CloseMenus" @oncontextmenu="CloseMenus" @oncontextmenu:preventDefault="true"></div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? Style { get; set; }
+    [Parameter] public string? ElementId { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Pull-downs on the left of the menu bar. Omit for a window with no menus.</summary>
+    [Parameter] public IReadOnlyList<CdeMenu>? Menus { get; set; }
+
+    /// <summary>Pushed to the right of the menu bar, where Motif puts Help.</summary>
+    [Parameter] public CdeMenu? HelpMenu { get; set; }
+
+    /// <summary>Set to make this a draggable, resizable window in the floating layer.</summary>
+    [Parameter] public bool Floating { get; set; }
+
+    /// <summary>Whether this floating window has focus, which drives the title bar colour.</summary>
+    [Parameter] public bool Active { get; set; } = true;
+
+    /// <summary>
+    /// Lets a window roll itself up when the caller does not want to own that state. Every window
+    /// gets a working minimise box this way, rather than a painted-on one.
+    /// </summary>
+    [Parameter] public bool Collapsible { get; set; } = true;
+
+    [Parameter] public bool Shaded { get; set; }
+    [Parameter] public bool Maximised { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<bool> ShadedChanged { get; set; }
+    [Parameter] public EventCallback<bool> MaximisedChanged { get; set; }
+    [Parameter] public EventCallback OnActivate { get; set; }
+
+    private string? _openMenu;
+    private bool _windowMenuOpen;
+    private bool _selfShaded;
+
+    private bool CanClose => OnClose.HasDelegate;
+    private bool CanMinimise => ShadedChanged.HasDelegate || Collapsible;
+    private bool CanMaximise => MaximisedChanged.HasDelegate;
+
+    /// <summary>Shading is the caller's when it supplies a callback, otherwise ours.</summary>
+    private bool IsShaded => ShadedChanged.HasDelegate ? Shaded : _selfShaded;
+
+    /// <summary>Underline one letter of a label, the way Motif marks its keyboard mnemonic.</summary>
+    private static RenderFragment Mnemonic(string label, int index) => builder =>
+    {
+        if (index < 0 || index >= label.Length)
+        {
+            builder.AddContent(0, label);
+            return;
+        }
+
+        builder.AddContent(1, label[..index]);
+        builder.OpenElement(2, "u");
+        builder.AddContent(3, label[index].ToString());
+        builder.CloseElement();
+        builder.AddContent(4, label[(index + 1)..]);
+    };
+
+    private void ToggleMenu(string label)
+    {
+        _windowMenuOpen = false;
+        _openMenu = _openMenu == label ? null : label;
+    }
+
+    private void ToggleWindowMenu()
+    {
+        _openMenu = null;
+        _windowMenuOpen = !_windowMenuOpen;
+    }
+
+    private void CloseMenus()
+    {
+        _openMenu = null;
+        _windowMenuOpen = false;
+    }
+
+    private async Task RunAsync(CdeMenuItem item)
+    {
+        CloseMenus();
+        if (item.Action is not null) await item.Action();
+    }
+
+    private Task Activate() => OnActivate.HasDelegate ? OnActivate.InvokeAsync() : Task.CompletedTask;
+
+    /// <summary>Double-clicking the title bar rolls the window up, as it does in CDE.</summary>
+    private Task OnTitleDoubleClick() => CanMinimise ? ToggleShade() : Task.CompletedTask;
+
+    private async Task ToggleShade()
+    {
+        CloseMenus();
+        if (ShadedChanged.HasDelegate) await ShadedChanged.InvokeAsync(!Shaded);
+        else if (Collapsible) _selfShaded = !_selfShaded;
+    }
+
+    private async Task ToggleMaximise()
+    {
+        CloseMenus();
+        if (CanMaximise) await MaximisedChanged.InvokeAsync(!Maximised);
+    }
+
+    private async Task Restore()
+    {
+        CloseMenus();
+        if (ShadedChanged.HasDelegate) { if (Shaded) await ShadedChanged.InvokeAsync(false); }
+        else _selfShaded = false;
+        if (Maximised && CanMaximise) await MaximisedChanged.InvokeAsync(false);
+    }
+
+    private async Task CloseIfPossible()
+    {
+        CloseMenus();
+        if (CanClose) await OnClose.InvokeAsync();
+    }
+}

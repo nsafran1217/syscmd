@@ -1,0 +1,49 @@
+# HP iLO 2/3 on ProLiant hardware, over its SSH-style text menu exposed on telnet.
+# iLO also speaks Redfish over HTTPS; that would need a coded driver rather than this
+# script, which is exactly what the IMpDriver interface leaves room for.
+name: HP iLO (telnet)
+transport: telnet
+defaultPort: 23
+
+timeouts:
+  expectSeconds: 25
+  connectSeconds: 10
+
+prompt: "hpiLO->"
+
+# iLO handles concurrent sessions.
+allowsConcurrentSessions: true
+
+login:
+  - expect: "login:"
+    send: "{username}"
+  - expect: "assword:"
+    send: "{password}"
+
+tasks:
+  poweron:
+    - expect: "hpiLO->"
+      send: "power on"
+    - expect: "hpiLO->"
+
+  poweroff:
+    - expect: "hpiLO->"
+      send: "power off"
+    - expect: "hpiLO->"
+      timeoutSeconds: 60
+
+  reset:
+    - expect: "hpiLO->"
+      send: "power reset"
+    - expect: "hpiLO->"
+
+  status:
+    - expect: "hpiLO->"
+      send: "power"
+    - expect: "hpiLO->"
+      match:
+        on: "/power: server power is currently: On/i"
+        off: "/power: server power is currently: Off/i"
+
+logout:
+  - send: "exit"

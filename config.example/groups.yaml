@@ -1,0 +1,16 @@
+# Groups power their machines on in the listed order and off in reverse,
+# waiting staggerSeconds between each to spread inrush current.
+groups:
+  - id: hp-ia64
+    name: HP IA64
+    machines:
+      - rp3440
+    staggerSeconds: 15
+
+  - id: everything
+    name: Everything
+    machines:
+      - rp3440
+      - ultra10
+      - vax3100
+    staggerSeconds: 10

@@ -1,0 +1,28 @@
+# A machine whose service processor is itself wired to a terminal server port,
+# so the MP and the serial console are the same physical wire.
+id: ultra10
+name: Sun Ultra 10
+description: UltraSPARC IIi workstation running Solaris 9
+tags: [solaris, sparc]
+
+pdu:
+  id: rack1
+  outlet: 3
+
+mp:
+  type: sun-alom
+  # "via" replaces "host" when the MP is reached through a console server.
+  via:
+    server: lantronix1
+    port: 5
+  username: admin
+  password: CHANGEME
+
+serial:
+  server: lantronix1
+  port: 5
+
+addresses:
+  - label: primary
+    ip: 10.0.0.33
+    hostname: ultra10.lab

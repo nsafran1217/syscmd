@@ -1,0 +1,24 @@
+id: alpha1000
+name: AlphaServer 1000
+description: Alpha server used to exercise the power-off confirmation timeout
+tags: [vms, alpha]
+
+pdu:
+  id: sim-pdu
+  outlet: 4
+
+mp:
+  type: hp-mp
+  host: 127.0.0.1
+  port: 2304
+  username: Admin
+  password: Admin
+
+serial:
+  server: sim-console
+  port: 4
+
+addresses:
+  - label: primary
+    ip: 10.0.0.34
+    hostname: alpha1000.lab

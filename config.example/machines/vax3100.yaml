@@ -1,0 +1,15 @@
+# A machine with no management processor at all: outlet control only.
+# Powering it off cuts the outlet immediately, since there is nothing to ask.
+id: vax3100
+name: VAXstation 3100
+description: No service processor - outlet control only
+tags: [vms, vax]
+
+pdu:
+  id: rack1
+  outlet: 5
+
+addresses:
+  - label: primary
+    ip: 10.0.0.35
+    hostname: vax3100.lab

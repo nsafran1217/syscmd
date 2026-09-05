@@ -1,0 +1,41 @@
+@* The CDE front panel: navigation in the same nine-slice chrome as the windows. *@
+
+<nav class="app-nav">
+    @* The front panel wears the same drawn frame as the windows. *@
+    <div class="cde-titlebar">
+        <span class="cw-title">Navigation</span>
+    </div>
+
+    <ul>
+        @if (ShowClose)
+        {
+            @* Only offered while the panel is a drawer over the content; on a wide screen the
+               topbar toggle is the way out. *@
+            <li class="nav-link nav-close">
+                <a href="#" @onclick="OnClose" @onclick:preventDefault="true">Close menu</a>
+            </li>
+        }
+
+        <li class="nav-heading">Control</li>
+        <li class="nav-link"><NavLink href="/" Match="NavLinkMatch.All">Dashboard</NavLink></li>
+        <li class="nav-link"><NavLink href="/jobs">Jobs</NavLink></li>
+        <li class="nav-link"><NavLink href="/events">Event Log</NavLink></li>
+        <li class="nav-link"><NavLink href="/power">Power</NavLink></li>
+
+        <li class="nav-heading">Setup</li>
+        <li class="nav-link">
+            <NavLink href="/config">
+                Configuration@(ConfigErrors > 0 ? $" ({ConfigErrors}!)" : "")
+            </NavLink>
+        </li>
+    </ul>
+</nav>
+
+@code {
+    [Parameter] public int ConfigErrors { get; set; }
+
+    /// <summary>Shown when the panel is overlaying the content rather than sitting beside it.</summary>
+    [Parameter] public bool ShowClose { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+}

@@ -1,0 +1,22 @@
+# Global settings. Also editable from the GUI under Configuration.
+site:
+  name: Home Lab
+  theme: dec
+
+power:
+  # How often every PDU is polled for its load reading.
+  pollIntervalSeconds: 30
+  # Your electricity rate, used for the cost figures on the status overview.
+  costPerKwh: 0.14
+  currency: USD
+
+orchestration:
+  # Pause after switching an outlet on before probing the management processor.
+  outletSettleSeconds: 5
+  # How long to wait for an MP to answer after outlet power is applied.
+  # Vintage service processors can take a couple of minutes to boot.
+  powerOnMpTimeoutSeconds: 180
+  # How long to wait for a machine to confirm it is powered down.
+  # If this expires the outlet is deliberately LEFT ON and the job fails.
+  powerOffConfirmTimeoutSeconds: 300
+  powerOffPollIntervalSeconds: 10
