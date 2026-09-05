@@ -12,15 +12,25 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-# Restore against the project files alone, so editing source does not re-download packages.
-# The server references the other two, so restoring it restores all three.
+# Warm the NuGet cache from the project files alone, so editing source does not re-download
+# packages. The server references the other two, so restoring it restores all three.
 COPY src/SysCmd.Core/SysCmd.Core.csproj           src/SysCmd.Core/
 COPY src/SysCmd.Server/SysCmd.Server.csproj       src/SysCmd.Server/
 COPY src/SysCmd.Simulator/SysCmd.Simulator.csproj src/SysCmd.Simulator/
 RUN dotnet restore src/SysCmd.Server/SysCmd.Server.csproj
 
 COPY src/ src/
-RUN dotnet publish src/SysCmd.Server/SysCmd.Server.csproj -c Release -o /app --no-restore
+
+# Publish restores again rather than passing --no-restore. That looks redundant next to the layer
+# above, and it is not: with --no-restore the SDK leaves the Blazor framework's static web assets
+# out of both wwwroot and the endpoint manifest, so _framework/blazor.web.js 404s at runtime. The
+# app still serves pages and links still navigate, because those are plain HTML - but no circuit
+# is ever established, so every button on every page silently does nothing. The packages are
+# already in the image's NuGet cache by this point, so this restore is a cache hit, not a download.
+RUN dotnet publish src/SysCmd.Server/SysCmd.Server.csproj -c Release -o /app
+
+# Fail the build loudly rather than shipping that silence again.
+RUN test -f /app/wwwroot/_framework/blazor.web.js
 
 # ------------------------------------------------------------------------------- runtime
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
