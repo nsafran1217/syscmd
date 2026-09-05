@@ -69,7 +69,7 @@
                     CdeMenuItem.Of("Roll up", () => OnShadedChanged(!Window.Shaded)),
                     CdeMenuItem.Of("Maximise", () => OnMaximisedChanged(!Window.Maximised)),
                     CdeMenuItem.Separator,
-                    CdeMenuItem.Of("Close", Close, "Alt+F4"),
+                    CdeMenuItem.Of("Close", Close),
                 ],
             },
             new CdeMenu
@@ -114,6 +114,13 @@
                 ],
             },
         ];
+
+        // Serial consoles are left alone: what is on the far end of a terminal server is
+        // anyone's guess, whereas an MP has a login script we can replay.
+        if (Window.Target == ConsoleTarget.Mp)
+        {
+            _menus = [.. _menus, new CdeMenu { Label = "Login", MnemonicIndex = 0, Action = LoginAsync }];
+        }
 
         _help = new CdeMenu
         {
@@ -190,6 +197,12 @@
     }
 
     private Task Send(string text) => Invoke("send", text);
+
+    /// <summary>
+    /// Ask the server to replay this MP type's login steps into the open session. The exchange
+    /// happens on the server so it can reuse the same expect script the power jobs use.
+    /// </summary>
+    private Task LoginAsync() => Invoke("command", "login");
 
     private async Task Invoke(string method, params object?[] args)
     {

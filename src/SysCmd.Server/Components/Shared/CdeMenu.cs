@@ -41,7 +41,14 @@ public sealed class CdeMenuItem
 public sealed class CdeMenu
 {
     public required string Label { get; init; }
-    public required IReadOnlyList<CdeMenuItem> Items { get; init; }
+
+    public IReadOnlyList<CdeMenuItem> Items { get; init; } = [];
+
+    /// <summary>
+    /// When set, the entry acts on click instead of opening a pull-down. Motif proper has no such
+    /// thing, but a single one-shot action reads better on the bar than a menu holding one item.
+    /// </summary>
+    public Func<Task>? Action { get; init; }
 
     /// <summary>Index of the underlined letter in <see cref="Label"/>. Defaults to the first.</summary>
     public int MnemonicIndex { get; init; }

@@ -252,6 +252,17 @@ h1:focus { outline: none; }
     display: flex;
     align-items: center;
     gap: 4px;
+    /*
+        Layering inside a window while a pull-down is open:
+          client area  0   (xterm draws its own layers up to 10)
+          catcher     30   swallows a click anywhere else, to dismiss the menu
+          chrome      40   this bar and the menu bar stay live
+          pull-downs  60   inside the chrome, so above the catcher
+        Without the chrome sitting above the catcher, the second half of a double-click on
+        the window-menu box lands on the catcher and the window never closes.
+    */
+    position: relative;
+    z-index: 40;
     padding: 2px;
     background: var(--accent);
     border: 2px solid;
@@ -380,6 +391,9 @@ h1:focus { outline: none; }
     display: flex;
     align-items: stretch;
     gap: 2px;
+    /* Same layer as the title bar: stay clickable while a pull-down is open. */
+    position: relative;
+    z-index: 40;
     margin-top: 4px;
     padding: 2px;
     background: var(--face);
@@ -575,7 +589,7 @@ h1:focus { outline: none; }
     background: var(--face);
     border: 2px solid;
     border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
-    z-index: 2;
+    z-index: 40;
 }
 
 .cde-window.maximised .cw-grip,
@@ -987,6 +1001,7 @@ label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
 }
 
 .terminal-host { flex: 1; min-height: 0; }
+
 
 .terminal-notice {
     flex: none;

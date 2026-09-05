@@ -249,6 +249,14 @@ which the image-based approach could not offer, since each theme needed its own 
 
 ### Console windows
 
+A management-processor console carries a **Login** entry on its menu bar that replays the login steps from that
+machine's mp-type file, so the session lands at the MP prompt without typing. The exchange runs on
+the server, watching the same byte stream the browser is being shown rather than opening a second
+reader on the session — which means it reuses the expect script the power jobs already use, and
+works for any MP type. Serial consoles do not offer it: what is on the far end of a terminal
+server port is anyone's guess.
+
+
 Consoles open as real windows on the page, in a floating layer above it. They drag by the title
 bar and resize from the corner grip, both handled in JavaScript so a pointer move does not make a
 server round trip. `ConsoleWindowManager` is scoped to the browser circuit and lives above the

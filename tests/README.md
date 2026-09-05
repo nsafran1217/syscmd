@@ -1,9 +1,12 @@
-# UI smoke tests
+# Smoke tests
 
-Checks the responsive layout and the touch paths in a real browser: that the event log sits
-beside the other windows on a wide screen and drops below on a narrow one, that the navigation
-toggle sticks across reloads, and that the forced-power actions and consoles are reachable
-without a right-click.
+Scripts that drive the running app against the simulated lab. `safety-smoke.mjs` uses the REST
+API only; the rest drive a real browser.
+
+`ui-smoke.mjs` checks the responsive layout and the touch paths: that the event log sits beside
+the other windows on a wide screen and drops below on a narrow one, that the navigation toggle
+sticks across reloads, and that the forced-power actions and consoles are reachable without a
+right-click.
 
 `window-smoke.mjs` covers the CDE window decorations: that the title-bar boxes roll a window up
 and maximise it, that the pull-down menus act rather than decorate, that a console window drags
@@ -28,6 +31,20 @@ outlet button outgrow its neighbours.
 stack, that it scrolls with the page rather than being pinned, that it does not change height as
 new entries arrive, and that it still rolls up to its title bar.
 
+`console-login-smoke.mjs` opens a console and checks the Login button reaches the MP prompt on
+both an HP MP and an ALOM, that it reports completion rather than only appearing to work, and
+that serial consoles do not offer it.
+
+`window-menu-smoke.mjs` covers the layering inside a window while a pull-down is open: that a
+double-click on the window-menu box closes the window, that the title bar and menu bar stay live,
+and that clicking away still dismisses.
+
+`safety-smoke.mjs` is the one to run if you only run one. It exercises the guarantees the design
+exists for, over the REST API with no browser: that an outlet stays live until its machine
+confirms it is powered down, that a machine which never confirms keeps its outlet, that forcing
+overrides and is logged, and that killing a job leaves untouched outlets alone. It takes a few
+minutes, because it waits out a real confirmation timeout.
+
 `power-smoke.mjs` points the simulated PDU at a watts load OID instead of a current one and checks
 the two readings agree, that watts are used verbatim rather than scaled by voltage, and that
 energy keeps accruing. It needs no browser.
@@ -36,7 +53,7 @@ They are plain scripts rather than a test project, so they need nothing but Node
 Chromium. The `install-deps` step is not required on Ubuntu 24.04.
 
 ```bash
-npm init -y && npm install playwright
+npm install                 # playwright, declared in the repo's package.json
 npx playwright install chromium
 
 # with the app running in another shell:
@@ -49,6 +66,9 @@ node tests/power-smoke.mjs                    # watts vs current readings and en
 SHOTS=./shots node tests/config-edit-smoke.mjs    # machine editor: credentials and DNS lookup
 SHOTS=./shots node tests/dashboard-smoke.mjs      # outlet filter, outlet-only power-on, machine controls
 SHOTS=./shots node tests/log-column-smoke.mjs      # the event log lines up and scrolls with the other windows
+SHOTS=./shots node tests/console-login-smoke.mjs  # the console Login button, on an HP MP and an ALOM
+SHOTS=./shots node tests/window-menu-smoke.mjs    # double-click to close, and menu layering
+node tests/safety-smoke.mjs                       # the power-safety guarantees, over the API
 ```
 
 Run one at a time. They drive the same simulated lab as each other and as the functional checks,

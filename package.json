@@ -1,0 +1,9 @@
+{
+  "name": "syscmd-tests",
+  "private": true,
+  "type": "module",
+  "description": "Browser smoke tests for syscmd. See tests/README.md.",
+  "devDependencies": {
+    "playwright": "1.49.1"
+  }
+}

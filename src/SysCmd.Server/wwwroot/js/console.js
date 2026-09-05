@@ -68,6 +68,16 @@ window.syscmdConsole = (function () {
             }
         },
 
+        // Control messages go as text frames; keystrokes are always binary, so the two
+        // never collide in the byte stream.
+        command: function (elementId, name) {
+            const i = instances.get(elementId);
+            if (i && i.socket.readyState === WebSocket.OPEN) {
+                i.socket.send(name);
+                i.term.focus();
+            }
+        },
+
         clear: function (elementId) {
             const i = instances.get(elementId);
             if (i) { i.term.clear(); i.term.focus(); }

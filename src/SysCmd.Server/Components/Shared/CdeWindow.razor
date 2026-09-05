@@ -24,9 +24,7 @@
                     <button type="button" @onclick="ToggleShade" disabled="@(!CanMinimise || IsShaded)">Minimise</button>
                     <button type="button" @onclick="ToggleMaximise" disabled="@(!CanMaximise || Maximised)">Maximise</button>
                     <hr />
-                    <button type="button" @onclick="CloseIfPossible" disabled="@(!CanClose)">
-                        Close<span class="accel">Alt+F4</span>
-                    </button>
+                    <button type="button" @onclick="CloseIfPossible" disabled="@(!CanClose)">Close</button>
                 </div>
             }
         </div>
@@ -60,12 +58,13 @@
                 var isOpen = _openMenu == menu.Label;
                 <div class="menu-anchor">
                     <button type="button" class="@(isOpen ? "open" : "")"
-                            aria-haspopup="true" aria-expanded="@(isOpen ? "true" : "false")"
-                            @onclick="() => ToggleMenu(menu.Label)" @onclick:stopPropagation="true">
+                            aria-haspopup="@(menu.Action is null ? "true" : "false")"
+                            aria-expanded="@(isOpen ? "true" : "false")"
+                            @onclick="() => ActivateAsync(menu)" @onclick:stopPropagation="true">
                         @Mnemonic(menu.Label, menu.MnemonicIndex)
                     </button>
 
-                    @if (isOpen)
+                    @if (isOpen && menu.Action is null)
                     {
                         <div class="cde-dropdown" @onclick:stopPropagation="true">
                             @foreach (var item in menu.Items)
@@ -131,14 +130,17 @@
            removing it would discard the drag listeners bound to it. *@
         <div class="cw-grip" data-cw-resize="1" title="Resize"></div>
     }
+
+    @* Any click elsewhere dismisses an open pull-down, the way a menu bar should behave.
+       It has to live inside the frame: a floating window carries its own z-index, so a
+       catcher outside it would paint over the very menus it is meant to leave alone. *@
+    @if (_openMenu is not null || _windowMenuOpen)
+    {
+        <div class="cde-overlay" style="background:transparent; z-index:30"
+             @onclick="CloseMenus" @oncontextmenu="CloseMenus" @oncontextmenu:preventDefault="true"></div>
+    }
 </div>
 
-@* Any click elsewhere dismisses an open pull-down, the way a menu bar should behave. *@
-@if (_openMenu is not null || _windowMenuOpen)
-{
-    <div class="cde-overlay" style="background:transparent; z-index:59"
-         @onclick="CloseMenus" @oncontextmenu="CloseMenus" @oncontextmenu:preventDefault="true"></div>
-}
 
 @code {
     [Parameter, EditorRequired] public string Title { get; set; } = "";
@@ -199,6 +201,19 @@
         builder.CloseElement();
         builder.AddContent(4, label[(index + 1)..]);
     };
+
+    /// <summary>A bar entry either runs its action or opens its pull-down.</summary>
+    private async Task ActivateAsync(CdeMenu menu)
+    {
+        if (menu.Action is not null)
+        {
+            CloseMenus();
+            await menu.Action();
+            return;
+        }
+
+        ToggleMenu(menu.Label);
+    }
 
     private void ToggleMenu(string label)
     {
