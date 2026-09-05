@@ -7,3 +7,4 @@ ports:
   2: 2402
   3: 2303   # the Ultra 10's ALOM is wired straight to this port
   4: 2404
+  5: 2405   # the PDP-11 has no service processor; this line is the only way in

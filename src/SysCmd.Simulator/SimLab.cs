@@ -18,8 +18,11 @@ public sealed class SimMachine
     public required string Name { get; init; }
     public required int Outlet { get; init; }
 
-    /// <summary>TCP port its management processor listens on.</summary>
-    public required int MpPort { get; init; }
+    /// <summary>
+    /// TCP port its management processor listens on, or null when it has none. Plenty of vintage
+    /// hardware has no service processor at all and is reached only over a terminal server.
+    /// </summary>
+    public int? MpPort { get; init; }
 
     /// <summary>Optional console-server port that reaches its serial console.</summary>
     public int? SerialPort { get; init; }

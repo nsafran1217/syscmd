@@ -96,7 +96,10 @@ window.syscmdUi = {
         const handle = el.querySelector('[data-cw-drag]');
         const grips = el.querySelectorAll('[data-cw-resize]');
 
-        const MIN_W = 280, MIN_H = 140;
+        // The frame says how small it may go: a console has a character grid it must not fall
+        // below, an ordinary window does not. Falls back to something merely usable.
+        const MIN_W = parseInt(el.dataset.cwMinWidth, 10) || 280;
+        const MIN_H = parseInt(el.dataset.cwMinHeight, 10) || 140;
         let mode = null, edge = '', startX = 0, startY = 0, originX = 0, originY = 0, originW = 0, originH = 0;
 
         const onDown = (e, which, which_edge) => {

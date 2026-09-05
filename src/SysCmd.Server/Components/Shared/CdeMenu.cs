@@ -18,6 +18,12 @@ public sealed class CdeMenuItem
     public bool Disabled { get; init; }
     public bool IsSeparator { get; init; }
 
+    /// <summary>
+    /// Set to make the entry a toggle, drawn with Motif's square indicator to the left of the
+    /// label. Null leaves it an ordinary command entry with no indicator.
+    /// </summary>
+    public bool? Checked { get; init; }
+
     /// <summary>Index of the mnemonic letter in <see cref="Label"/>, underlined the way Motif does.</summary>
     public int MnemonicIndex { get; init; } = -1;
 
@@ -25,6 +31,10 @@ public sealed class CdeMenuItem
 
     public static CdeMenuItem Of(string label, Func<Task> action, string? accelerator = null, bool disabled = false)
         => new() { Label = label, Action = action, Accelerator = accelerator, Disabled = disabled };
+
+    /// <summary>A toggle entry: same as <see cref="Of(string, Func{Task}, string?, bool)"/>, with an indicator.</summary>
+    public static CdeMenuItem Toggle(string label, bool value, Func<Task> action, bool disabled = false)
+        => new() { Label = label, Action = action, Checked = value, Disabled = disabled };
 
     /// <summary>Convenience for actions that do not need to await anything.</summary>
     public static CdeMenuItem Of(string label, Action action, string? accelerator = null, bool disabled = false)

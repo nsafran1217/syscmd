@@ -21,11 +21,14 @@ await p.goto('http://localhost:5080/', { waitUntil: 'networkidle' });
 await ready(p);
 
 console.log('\n[hide unassigned outlets]');
-ok(await p.locator('.outlet-cell').count() === 5, 'only assigned outlets shown by default',
-   `${await p.locator('.outlet-cell').count()} of 8`);
+// Counted rather than pinned to a number: the simulated lab gains machines from time to time,
+// and what matters is that the ones on show plus the ones it says it hid account for the PDU.
+const shown = await p.locator('.outlet-cell').count();
+ok(shown > 0 && shown < 8, 'some outlets are hidden by default', `${shown} of 8`);
 ok(await p.locator('.outlet-cell', { hasText: 'unassigned' }).count() === 0, 'no unassigned outlets visible');
 const note = await p.locator('text=/unassigned outlets are hidden/').first().innerText().catch(() => '');
-ok(/3 unassigned/.test(note), 'says how many are hidden', note.trim());
+const hidden = Number((note.match(/(\d+) unassigned/) || [])[1]);
+ok(shown + hidden === 8, 'says how many are hidden, and they add up', `${shown} shown + ${hidden} hidden`);
 
 const hideToggle = p.locator('.inline-toggle', { hasText: 'Hide unassigned' }).locator('input');
 ok(await hideToggle.isChecked(), 'toggle is on by default');

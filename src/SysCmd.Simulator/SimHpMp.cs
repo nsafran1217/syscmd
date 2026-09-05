@@ -5,7 +5,7 @@ namespace SysCmd.Simulator;
 /// control, "ps" for power status. The prompts match what the shipped hp-mp.yaml expects.
 /// </summary>
 public sealed class SimHpMp(SimLab lab, SimMachine machine)
-    : SimTelnetServer($"{machine.Name} MP", machine.MpPort)
+    : SimTelnetServer($"{machine.Name} MP", machine.MpPort!.Value)
 {
     protected override bool IsPowered => lab.IsOutletOn(machine.Outlet) && machine.MpReachable;
 

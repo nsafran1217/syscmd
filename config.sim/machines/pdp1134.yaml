@@ -1,0 +1,19 @@
+id: pdp1134
+name: PDP-11/34A
+description: No management processor - reached only over the terminal server
+tags: [pdp11, dec]
+
+pdu:
+  id: sim-pdu
+  outlet: 6
+
+# No mp: block. Nothing that works through a service processor is offered for this machine,
+# which is what the console's Power menu greys itself out for.
+serial:
+  server: sim-console
+  port: 5
+
+addresses:
+  - label: primary
+    ip: 10.0.0.36
+    hostname: pdp1134.lab

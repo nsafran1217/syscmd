@@ -2,12 +2,16 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject ConsoleWindowManager Windows
+@inject ConfigStore Config
+@inject MachinePowerService Power
 
 <CdeWindow Title="@Window.Title"
            ElementId="@Window.WindowElementId"
            Class="terminal-window"
            Style="@Geometry"
            Floating="true"
+           MinWidth="MinWidth"
+           MinHeight="MinHeight"
            Active="@Active"
            Menus="_menus"
            HelpMenu="_help"
@@ -26,13 +30,36 @@
     }
 </CdeWindow>
 
+@* Outside the frame on purpose: a floating window carries its own z-index, so a dialog rendered
+   inside one would be trapped beneath the windows stacked above it. *@
+<ConfirmDialog Visible="@(_confirm is not null)"
+               Title="@(_confirm?.Title ?? "")"
+               ConfirmLabel="@(_confirm?.ConfirmLabel ?? "OK")"
+               Destructive="true"
+               OnConfirm="ConfirmPowerAsync"
+               OnCancel="() => _confirm = null">
+    @_confirm?.Message
+</ConfirmDialog>
+
 @code {
     [Parameter, EditorRequired] public ConsoleWindow Window { get; set; } = default!;
     [Parameter] public bool Active { get; set; }
 
-    /// <summary>Floor for the restored size, so a window can never come back unusable.</summary>
-    private const int MinWidth = 280;
-    private const int MinHeight = 160;
+    /// <summary>
+    /// Floor for the window, so a console can never be shrunk below the 80x24 a terminal is
+    /// entitled to. Measured rather than guessed: the shipped 13px mono stack gives an 8.07 x
+    /// 15.04 cell, so 80x24 needs a 646x361 client area, and the frame, title bar, menu bar and
+    /// padding add 26 x 79 around it. A couple of pixels of slack absorbs sub-pixel rounding.
+    /// A font stack without DejaVu Sans Mono may measure differently; theme-smoke asserts the
+    /// grid rather than these numbers, so it is the check that matters.
+    /// </summary>
+    private const int MinWidth = 676;
+    private const int MinHeight = 444;
+
+    /// <summary>A power action waiting on the confirmation dialog.</summary>
+    private sealed record PendingPower(PowerAction Action, string Title, string ConfirmLabel, string Message);
+
+    private PendingPower? _confirm;
 
     private DotNetObjectReference<TerminalWindow>? _self;
     private IReadOnlyList<CdeMenu> _menus = [];
@@ -50,6 +77,13 @@
         public const string Escape = "\u001b";
         public const string Break = "\u001c";
     }
+
+    /// <summary>
+    /// Whether this machine has a management processor at all. Everything on the Power menu goes
+    /// through one, so without it the whole menu greys out rather than offering actions that
+    /// would only fail: EnqueueMachinePower refuses a reset with no MP by design.
+    /// </summary>
+    private bool HasMp => Config.Current.Machine(Window.MachineId)?.Mp is not null;
 
     private string Geometry =>
         $"left:{Window.X}px; top:{Window.Y}px; width:{Window.Width}px; height:{Window.Height}px; z-index:{Window.ZIndex};";
@@ -102,12 +136,28 @@
             },
             new CdeMenu
             {
+                Label = "Power",
+                MnemonicIndex = 0,
+                Items =
+                [
+                    // All three go through the management processor, so all three are dead
+                    // without one. A machine reached over a console server may well have none.
+                    CdeMenuItem.Of("Power on", () => StartPowerAsync(PowerAction.On), disabled: !HasMp),
+                    CdeMenuItem.Of("Power off", () => AskPowerAsync(PowerAction.Off), disabled: !HasMp),
+                    CdeMenuItem.Separator,
+                    CdeMenuItem.Of("Reset", () => AskPowerAsync(PowerAction.Reset), disabled: !HasMp),
+                ],
+            },
+            new CdeMenu
+            {
                 Label = "Options",
                 MnemonicIndex = 0,
                 Items =
                 [
                     CdeMenuItem.Of("Larger text", () => FontAsync(1)),
                     CdeMenuItem.Of("Smaller text", () => FontAsync(-1)),
+                    CdeMenuItem.Separator,
+                    CdeMenuItem.Toggle("Black background", Window.BlackBackground, ToggleBlackAsync),
                     CdeMenuItem.Separator,
                     CdeMenuItem.Of("Refit to window", () => Invoke("refit")),
                     CdeMenuItem.Of("Reconnect", ReconnectAsync),
@@ -144,6 +194,11 @@
         {
             await JS.InvokeVoidAsync("syscmdUi.initWindow", Window.WindowElementId, _self);
             await JS.InvokeVoidAsync("syscmdConsole.open", Window.TerminalElementId, SocketUrl());
+
+            // The terminal is new even when the window is not - navigating away and back
+            // re-attaches it - so the override has to be re-applied rather than assumed.
+            if (Window.BlackBackground)
+                await JS.InvokeVoidAsync("syscmdConsole.setBlack", Window.TerminalElementId, true);
         }
         catch (JSDisconnectedException) { /* the browser went away */ }
     }
@@ -194,6 +249,71 @@
     {
         await SafeCloseTerminalAsync();
         Windows.Close(Window.Id);
+    }
+
+    private async Task ToggleBlackAsync()
+    {
+        Window.BlackBackground = !Window.BlackBackground;
+        await Invoke("setBlack", Window.BlackBackground);
+
+        // The menu carries the toggle's state, so it has to be rebuilt for the indicator to move.
+        BuildMenus();
+        StateHasChanged();
+    }
+
+    // ------------------------------------------------------------------------------- power
+
+    /// <summary>
+    /// Queues a power action and says so. Everything here goes through MachinePowerService, the
+    /// same path the dashboard and the machine list use, so the shutdown-confirmation guarantee
+    /// holds: switching a machine off asks its MP first and leaves the outlet on if it never
+    /// confirms. The console is a view of the machine, not a way around its rules.
+    /// </summary>
+    private async Task StartPowerAsync(PowerAction action)
+    {
+        _confirm = null;
+
+        try
+        {
+            var job = Power.EnqueueMachinePower(Window.MachineId, action, force: false);
+            _notice = $"{job.Title} queued. Watch it on the Jobs page.";
+        }
+        catch (Exception ex)
+        {
+            _notice = ex.Message;
+        }
+
+        await Task.Yield();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Anything that takes power away asks first. Powering on does not, matching the dashboard:
+    /// applying power harms nothing, taking it away can.
+    /// </summary>
+    private Task AskPowerAsync(PowerAction action)
+    {
+        var name = Window.MachineName;
+
+        _confirm = action == PowerAction.Off
+            ? new PendingPower(action, "Power off", "Power off",
+                $"Shut {name} down through its management processor and switch its outlet off? " +
+                "The outlet stays on if it never confirms it is down.")
+            : new PendingPower(action, "Reset", "Reset",
+                $"Reset {name} through its management processor? " +
+                "Anything running on it stops without a clean shutdown.");
+
+        // The click was handled inside CdeWindow, so only that component would re-render on its
+        // own; the dialog belongs to this one.
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task ConfirmPowerAsync()
+    {
+        var pending = _confirm;
+        _confirm = null;
+        return pending is null ? Task.CompletedTask : StartPowerAsync(pending.Action);
     }
 
     private Task Send(string text) => Invoke("send", text);

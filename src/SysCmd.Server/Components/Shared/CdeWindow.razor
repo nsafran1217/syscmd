@@ -3,7 +3,9 @@
    floating console windows. *@
 
 <div class="cde-window @(IsShaded ? "shaded" : "") @(Maximised ? "maximised" : "") @(Floating && !Active ? "inactive" : "") @Class"
-     id="@ElementId" style="@Style" @onmousedown="Activate">
+     id="@ElementId" style="@Style" @onmousedown="Activate"
+     data-cw-min-width="@(Floating ? MinWidth.ToString() : null)"
+     data-cw-min-height="@(Floating ? MinHeight.ToString() : null)">
 
     <div class="cde-titlebar" data-cw-drag="@(Floating ? "1" : null)"
          @ondblclick="OnTitleDoubleClick">
@@ -67,7 +69,10 @@
 
                     @if (isOpen && menu.Action is null)
                     {
-                        <div class="cde-dropdown" @onclick:stopPropagation="true">
+                        @* A pane holding a toggle indents every entry, so the labels still line
+                           up under one another the way Motif lays a menu pane out. *@
+                        <div class="cde-dropdown @(menu.Items.Any(i => i.Checked.HasValue) ? "has-toggles" : "")"
+                             @onclick:stopPropagation="true">
                             @foreach (var item in menu.Items)
                             {
                                 @if (item.IsSeparator)
@@ -77,7 +82,13 @@
                                 else
                                 {
                                     <button type="button" disabled="@item.Disabled"
+                                            role="@(item.Checked.HasValue ? "menuitemcheckbox" : null)"
+                                            aria-checked="@(item.Checked?.ToString().ToLowerInvariant())"
                                             @onclick="() => RunAsync(item)">
+                                        @if (item.Checked is { } isSet)
+                                        {
+                                            <span class="menu-toggle @(isSet ? "on" : "")"></span>
+                                        }
                                         @Mnemonic(item.Label, item.MnemonicIndex)
                                         @if (item.Accelerator is { Length: > 0 } accel)
                                         {
@@ -172,6 +183,15 @@
 
     /// <summary>Set to make this a draggable, resizable window in the floating layer.</summary>
     [Parameter] public bool Floating { get; set; }
+
+    /// <summary>
+    /// Smallest the frame may be dragged to, in CSS pixels. It lives here rather than in the
+    /// resize script so the window that knows what it holds gets to say - a console has a grid
+    /// it must not fall below, an ordinary window does not.
+    /// </summary>
+    [Parameter] public int MinWidth { get; set; } = 280;
+
+    [Parameter] public int MinHeight { get; set; } = 160;
 
     /// <summary>Whether this floating window has focus, which drives the title bar colour.</summary>
     [Parameter] public bool Active { get; set; } = true;

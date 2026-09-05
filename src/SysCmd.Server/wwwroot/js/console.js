@@ -18,11 +18,26 @@ window.syscmdConsole = (function () {
         };
     }
 
+    // The override: a plain black terminal, whatever the palette is doing. Deliberately fixed
+    // rather than palette-derived - the point of asking for it is to stop the console following
+    // the theme, and half the shipped palettes put black text on a light colour set, which would
+    // be unreadable on black.
+    const BLACK = {
+        background: '#000000',
+        foreground: '#e6e6e6',
+        cursor: '#e6e6e6',
+        selectionBackground: '#4e5566'
+    };
+
+    function themeFor(entry) {
+        return entry.black ? BLACK : themeColors();
+    }
+
     // Repaints every open console when the palette changes. xterm keeps its own copy of the
-    // theme, so nothing short of handing it a new one will do.
+    // theme, so nothing short of handing it a new one will do. A console holding the black
+    // override keeps it.
     function retheme() {
-        const theme = themeColors();
-        instances.forEach((entry) => { entry.term.options.theme = theme; });
+        instances.forEach((entry) => { entry.term.options.theme = themeFor(entry); });
     }
 
     function make(elementId, wsUrl) {
@@ -64,7 +79,7 @@ window.syscmdConsole = (function () {
         });
         observer.observe(element);
 
-        return { term, fit, socket, observer, element, fontSize: 13 };
+        return { term, fit, socket, observer, element, fontSize: 13, black: false };
     }
 
     return {
@@ -151,6 +166,21 @@ window.syscmdConsole = (function () {
             i.term.options.fontSize = i.fontSize;
             try { i.fit.fit(); } catch (e) { /* ignore */ }
             return i.fontSize;
+        },
+
+        // Forces a plain black background on one console, or puts it back on the palette.
+        setBlack: function (elementId, black) {
+            const i = instances.get(elementId);
+            if (!i) return;
+            i.black = !!black;
+            i.term.options.theme = themeFor(i);
+        },
+
+        // The grid xterm settled on after fitting. Read by the smoke tests, which assert that a
+        // console is never handed less than the 80x24 a terminal is entitled to.
+        size: function (elementId) {
+            const i = instances.get(elementId);
+            return i ? { cols: i.term.cols, rows: i.term.rows } : null;
         },
 
         refit: function (elementId) {

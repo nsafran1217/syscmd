@@ -19,7 +19,7 @@ button.
 Requires the .NET 10 SDK.
 
 ```bash
-# The fake lab: an SNMP PDU and four management processors, no hardware needed.
+# The fake lab: an SNMP PDU, four management processors and a machine with none.
 dotnet run --project src/SysCmd.Server -- --simulate
 
 # Real hardware, reading config/
@@ -329,9 +329,29 @@ works for any MP type. Serial consoles do not offer it: what is on the far end o
 server port is anyone's guess.
 
 
+A console is never handed less than the **80x24** a terminal is entitled to. The default window is
+sized from the cell metrics rather than picked by eye — at the shipped 13px mono stack that is
+about 90x29 — and the frame declares its own resize floor, so dragging it small stops while the
+grid is still whole. `tests/console-smoke.mjs` asserts the grid itself rather than the pixel
+numbers, since how many pixels 80 columns takes depends on which font actually resolved.
+
+**Options > Black background** overrides the palette for one console. It is deliberately a fixed
+scheme rather than a derived one: the point of asking for it is to stop the terminal following the
+theme, and half the shipped palettes put black text on a light colour set, which would be
+unreadable on black. The choice is per window and survives navigating away, not a reload — the
+same lifetime as the window's geometry.
+
+**Power** on the console's menu bar runs power actions through the machine's management processor:
+on, off, and reset. It calls the same `MachinePowerService` the dashboard does, so the
+shutdown-confirmation guarantee holds — switching a machine off asks its MP first and leaves the
+outlet on if it never confirms. The console is a view of the machine, not a way around its rules.
+Off and reset ask before acting; powering on does not, matching the dashboard. Every entry greys
+out on a machine with no management processor, which the simulated lab has one of (`pdp1134`,
+reached only over the terminal server).
+
 Consoles open as real windows on the page, in a floating layer above it. They drag by the title
-bar and resize from the corner grip, both handled in JavaScript so a pointer move does not make a
-server round trip. `ConsoleWindowManager` is scoped to the browser circuit and lives above the
+bar and resize from any of the eight frame pieces, both handled in JavaScript so a pointer move
+does not make a server round trip. `ConsoleWindowManager` is scoped to the browser circuit and lives above the
 router, so a session survives navigating to another page — closing a console should be deliberate,
 not a side effect of clicking Configuration. Opening the same target twice raises the existing
 window instead of fighting over the endpoint lease. Below 720px a floating window fills the screen,

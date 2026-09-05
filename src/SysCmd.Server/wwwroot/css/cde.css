@@ -708,6 +708,31 @@ h1:focus { outline: none; }
 
 .cde-dropdown .accel { float: right; margin-left: 20px; opacity: 0.7; }
 
+/*
+   A menu toggle, drawn as Motif draws XmToggleButtonGadget with an XmN_OF_MANY indicator: a small
+   square that is raised when clear and, because CDE sets enableToggleColor, recessed and filled
+   with the colour set's select colour when set.
+*/
+.cde-dropdown .menu-toggle {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-right: 8px;
+    vertical-align: -1px;
+    border: 1px solid;
+    border-color: var(--menu-hi) var(--menu-lo) var(--menu-lo) var(--menu-hi);
+}
+
+.cde-dropdown .menu-toggle.on {
+    background: var(--menu-sel);
+    border-color: var(--menu-lo) var(--menu-hi) var(--menu-hi) var(--menu-lo);
+}
+
+/* Motif lines every label in a pane up with the others, so entries without an indicator are
+   indented past where one would be. */
+.cde-dropdown.has-toggles button { padding-left: 30px; }
+.cde-dropdown.has-toggles button:has(.menu-toggle) { padding-left: 11px; }
+
 /* ----------------------------------------------------------------- nav panel */
 
 /* The CDE front panel, using the same drawn frame as the windows. */
@@ -793,6 +818,10 @@ h1:focus { outline: none; }
     z-index: 400;
     pointer-events: none;
 }
+
+/* The layer itself is inert so the page underneath stays usable; each window takes its events
+   back. A dialog raised from a console is a child of the layer too, so it has to as well. */
+.window-layer .cde-overlay { pointer-events: auto; }
 
 .window-layer .cde-window {
     position: absolute;

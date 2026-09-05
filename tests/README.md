@@ -45,6 +45,13 @@ confirms it is powered down, that a machine which never confirms keeps its outle
 overrides and is logged, and that killing a job leaves untouched outlets alone. It takes a few
 minutes, because it waits out a real confirmation timeout.
 
+`console-smoke.mjs` covers the console window: that it opens at 80x24 or better and cannot be
+dragged below it, that the black-background override applies and toggles back, and that the Power
+menu offers on, off and reset through the management processor — asking before anything that takes
+power away, queueing nothing when cancelled, and greying out entirely on `pdp1134`, the simulated
+machine with no service processor. The size checks read xterm's own cols and rows rather than
+measuring pixels, because that is the thing being promised.
+
 `theme-smoke.mjs` covers the palettes and backdrops. It is the only suite that checks colour, and
 it does so against numbers with an independent source rather than against whatever the code emits:
 colours sampled from the real CDE screenshots in `docs/website_reference`. It checks that Motif's
@@ -74,6 +81,7 @@ SHOTS=./shots node tests/behaviour-smoke.mjs  # navigation, confirmation toggle,
 SHOTS=./shots node tests/window-rollup-smoke.mjs  # roll up, restore and resize a console window
 node tests/power-smoke.mjs                    # watts vs current readings and energy accrual
 SHOTS=./shots node tests/theme-smoke.mjs      # CDE palettes, backdrops and the Motif colour maths
+SHOTS=./shots node tests/console-smoke.mjs    # console size floor, black background, power menu
 SHOTS=./shots node tests/config-edit-smoke.mjs    # machine editor: credentials and DNS lookup
 SHOTS=./shots node tests/dashboard-smoke.mjs      # outlet filter, outlet-only power-on, machine controls
 SHOTS=./shots node tests/log-column-smoke.mjs      # the event log lines up and scrolls with the other windows

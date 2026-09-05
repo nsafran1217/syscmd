@@ -38,6 +38,13 @@ public sealed class SimulatorHost : IAsyncDisposable
                 RunningWatts = 260, MpBootTime = TimeSpan.FromSeconds(7),
                 Shutdown = ShutdownBehaviour.Stubborn,
             },
+            // No service processor at all, reached only over the terminal server. Everything that
+            // goes through an MP has to notice and offer nothing rather than fail.
+            new SimMachine
+            {
+                Id = "pdp1134", Name = "PDP-11/34A", Outlet = 6, MpPort = null, SerialPort = 2405,
+                RunningWatts = 480,
+            },
         ]);
     }
 
@@ -58,12 +65,15 @@ public sealed class SimulatorHost : IAsyncDisposable
 
         foreach (var machine in Lab.Machines)
         {
-            // The Sun box speaks ALOM; the rest are HP MPs.
-            SimTelnetServer mp = machine.Id == "ultra10"
-                ? new SimAlom(Lab, machine)
-                : new SimHpMp(Lab, machine);
-            mp.Start();
-            _devices.Add(mp);
+            if (machine.MpPort is not null)
+            {
+                // The Sun box speaks ALOM; the rest are HP MPs.
+                SimTelnetServer mp = machine.Id == "ultra10"
+                    ? new SimAlom(Lab, machine)
+                    : new SimHpMp(Lab, machine);
+                mp.Start();
+                _devices.Add(mp);
+            }
 
             if (machine.SerialPort is { } serialPort)
             {

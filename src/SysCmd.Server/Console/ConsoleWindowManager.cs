@@ -18,10 +18,15 @@ public sealed class ConsoleWindow
     public string WindowElementId => $"win-{Id}";
 
     // Geometry, in CSS pixels. The window manager cascades new windows so they do not stack up.
+    //
+    // The default is sized from the terminal rather than picked by eye: at the shipped 13px mono
+    // stack a cell measures 8.07 x 15.04, so this lands around 90x29 - comfortably clear of the
+    // 80x24 a terminal is entitled to, with room to lose a line to the notice bar. See
+    // TerminalWindow's MinWidth/MinHeight for the floor.
     public int X { get; set; }
     public int Y { get; set; }
-    public int Width { get; set; } = 720;
-    public int Height { get; set; } = 440;
+    public int Width { get; set; } = 760;
+    public int Height { get; set; } = 520;
 
     public int ZIndex { get; set; }
     public bool Shaded { get; set; }
@@ -29,6 +34,12 @@ public sealed class ConsoleWindow
 
     /// <summary>Set once the browser has attached a terminal, so we do not attach twice.</summary>
     public bool Attached { get; set; }
+
+    /// <summary>
+    /// Forces a plain black terminal instead of following the palette. Per window and not
+    /// persisted, like the geometry beside it: it survives navigating away, not a reload.
+    /// </summary>
+    public bool BlackBackground { get; set; }
 }
 
 /// <summary>

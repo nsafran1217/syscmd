@@ -6,7 +6,7 @@ namespace SysCmd.Simulator;
 /// checking the expect engine is not accidentally specialised to one device.
 /// </summary>
 public sealed class SimAlom(SimLab lab, SimMachine machine)
-    : SimTelnetServer($"{machine.Name} ALOM", machine.MpPort)
+    : SimTelnetServer($"{machine.Name} ALOM", machine.MpPort!.Value)
 {
     protected override bool IsPowered => lab.IsOutletOn(machine.Outlet) && machine.MpReachable;
 
