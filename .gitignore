@@ -10,6 +10,9 @@ config/
 data/
 data.sim/
 
+# Compose bind mounts: the same credentials as config/, plus runtime history.
+docker/
+
 # UI smoke test scaffolding
 node_modules/
 package-lock.json

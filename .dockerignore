@@ -6,6 +6,9 @@ config/
 data/
 data.sim/
 
+# Compose bind mounts, which are a deployment's config and data by another name.
+docker/
+
 # Build output, rebuilt inside the image from source.
 **/bin/
 **/obj/

@@ -69,6 +69,39 @@ Bridge networking is enough — syscmd only listens on 5080, and reaches the PDU
 management processors over telnet outbound. Publish that port only on a network you trust: see
 [Security](#security).
 
+### With Compose
+
+`compose.yaml` wraps the same image. Create the mount points and drop the templates in first —
+Docker would otherwise create the bind-mount sources itself, owned by root, and the container
+could not write them:
+
+```bash
+mkdir -p docker/config docker/data
+cp -r config.example/* docker/config/
+
+docker compose up -d                     # real hardware
+docker compose --profile sim up          # the fake lab: no config, no volumes
+```
+
+Then edit `docker/config/*.yaml` as yourself; syscmd's file watcher picks the changes up without
+a restart. The directory is gitignored, because it holds the same community strings and MP
+passwords `config/` does.
+
+The `syscmd` service runs as **your** uid rather than the image's `app` user, which is what makes
+that hand-editing work — the container has to write the same files you do, since the
+configuration pages save YAML back. It defaults to 1000:1000; put your own in a `.env` beside the
+compose file if they differ:
+
+```
+SYSCMD_UID=1000
+SYSCMD_GID=1000
+SYSCMD_PORT=5080
+TZ=America/Toronto
+```
+
+The `sim` profile deliberately does *not* override the user: with no volumes it writes its event
+log inside the image, to a directory owned by `app`.
+
 ## How it is put together
 
 ```
