@@ -42,8 +42,8 @@ const menu = win.locator('.cde-dropdown').first();
 const labels = (await menu.locator('button').allInnerTexts()).map(t => t.trim());
 ok(!labels.includes('Unroll'), 'no duplicate Unroll entry', labels.join(' | '));
 ok(labels.includes('Restore'), 'Restore present');
-const minDisabled = await menu.locator('button', { hasText: 'Minimise' }).isDisabled();
-ok(minDisabled, 'Minimise greys out while already rolled up');
+const minDisabled = await menu.locator('button', { hasText: 'Minimize' }).isDisabled();
+ok(minDisabled, 'Minimize greys out while already rolled up');
 
 await menu.locator('button', { hasText: 'Restore' }).click();
 await p.waitForTimeout(600);
