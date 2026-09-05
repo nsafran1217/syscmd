@@ -63,6 +63,13 @@ public sealed class CdeMenu
     /// <summary>Index of the underlined letter in <see cref="Label"/>. Defaults to the first.</summary>
     public int MnemonicIndex { get; init; }
 
+    /// <summary>
+    /// Greys the whole entry out on the bar. For a pull-down it is usually the items that are
+    /// disabled rather than the menu; this is for the one-shot kind, where the entry itself is
+    /// the action and there is nothing behind it to grey.
+    /// </summary>
+    public bool Disabled { get; init; }
+
     public static CdeMenu Of(string label, params CdeMenuItem[] items)
         => new() { Label = label, Items = items };
 }

@@ -85,6 +85,14 @@
     /// </summary>
     private bool HasMp => Config.Current.Machine(Window.MachineId)?.Mp is not null;
 
+    /// <summary>
+    /// Whether this machine's mp-type defines any login steps. LoginAssistant refuses without
+    /// them, so the button would only ever explain itself.
+    /// </summary>
+    private bool HasLoginScript =>
+        Config.Current.Machine(Window.MachineId)?.Mp is { } mp
+        && Config.Current.MpTypes.GetValueOrDefault(mp.Type) is { Login.Count: > 0 };
+
     private string Geometry =>
         $"left:{Window.X}px; top:{Window.Y}px; width:{Window.Width}px; height:{Window.Height}px; z-index:{Window.ZIndex};";
 
@@ -166,10 +174,16 @@
         ];
 
         // Serial consoles are left alone: what is on the far end of a terminal server is
-        // anyone's guess, whereas an MP has a login script we can replay.
+        // anyone's guess, whereas an MP has a login script we can replay. An mp-type with no
+        // login block greys the entry out rather than offering a button whose only outcome is
+        // to report that there was nothing to send - plenty of service processors drop straight
+        // to a prompt with no login at all.
         if (Window.Target == ConsoleTarget.Mp)
         {
-            _menus = [.. _menus, new CdeMenu { Label = "Login", MnemonicIndex = 0, Action = LoginAsync }];
+            _menus = [.. _menus, new CdeMenu
+            {
+                Label = "Login", MnemonicIndex = 0, Action = LoginAsync, Disabled = !HasLoginScript,
+            }];
         }
 
         _help = new CdeMenu

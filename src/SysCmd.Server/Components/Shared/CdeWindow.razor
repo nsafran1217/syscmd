@@ -59,7 +59,7 @@
             {
                 var isOpen = _openMenu == menu.Label;
                 <div class="menu-anchor">
-                    <button type="button" class="@(isOpen ? "open" : "")"
+                    <button type="button" class="@(isOpen ? "open" : "")" disabled="@menu.Disabled"
                             aria-haspopup="@(menu.Action is null ? "true" : "false")"
                             aria-expanded="@(isOpen ? "true" : "false")"
                             @onclick="() => ActivateAsync(menu)" @onclick:stopPropagation="true"
@@ -258,6 +258,9 @@
     /// </summary>
     private void TrackMenu(CdeMenu menu)
     {
+        // An insensitive cascade button does not arm in Motif, so the pointer passes over it
+        // without disturbing whatever is already posted.
+        if (menu.Disabled) return;
         if (_openMenu is null || _openMenu == menu.Label) return;
 
         _openMenu = menu.Action is null ? menu.Label : null;

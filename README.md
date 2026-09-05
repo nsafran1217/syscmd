@@ -322,7 +322,9 @@ slice set. All 41 of CDE's palettes and 28 of its backdrops ship, and both are p
 ### Console windows
 
 A management-processor console carries a **Login** entry on its menu bar that replays the login steps from that
-machine's mp-type file, so the session lands at the MP prompt without typing. The exchange runs on
+machine's mp-type file, so the session lands at the MP prompt without typing. An mp-type with no
+`login:` block greys the entry out rather than offering a button whose only outcome is to report
+that there was nothing to send — plenty of service processors drop straight to a prompt. The exchange runs on
 the server, watching the same byte stream the browser is being shown rather than opening a second
 reader on the session — which means it reuses the expect script the power jobs already use, and
 works for any MP type. Serial consoles do not offer it: what is on the far end of a terminal
