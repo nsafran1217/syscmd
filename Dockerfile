@@ -39,6 +39,9 @@ COPY config.sim/ ./config.sim/
 # log and power history into them and does not run as root.
 #
 # config is writable on purpose: the configuration pages save YAML back through ConfigStore.
+# app is the non-root user the .NET base images create, uid and gid both 1654 (runtime-deps sets
+# APP_UID and useradds against it). Named rather than numbered here so this keeps working if that
+# number ever moves; the README says how to check it.
 RUN mkdir -p config data data.sim && chown -R app:app config data data.sim
 
 ENV ASPNETCORE_HTTP_PORTS=5080

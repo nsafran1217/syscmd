@@ -52,10 +52,14 @@ Arguments after the image name reach the app, which is how `--simulate` gets in.
 
 Three things are worth knowing:
 
-- **Both mounts need to be writable by uid 1654**, the non-root `app` user the image runs as.
-  `data` is obvious — the event log and power history live there — but `config` is written too,
-  because the configuration pages save YAML back through `ConfigStore`. `chown -R 1654:1654` the
-  host directories, or run with `--user`.
+- **Both mounts need to be writable by uid 1654.** That number is not this repo's: it is the
+  non-root `app` user Microsoft's .NET base images create and run as. `runtime-deps` sets
+  `APP_UID=1654` and then `useradd --no-log-init --uid=$APP_UID --gid=$APP_UID app`, so the group
+  is 1654 too. Confirm it with `docker run --rm syscmd id` rather than trusting it, in case a
+  future base image moves it. `data` is the obvious one — the event log and power history live
+  there — but `config` is written as well, because the configuration pages save YAML back through
+  `ConfigStore`. So `chown -R 1654:1654` the host directories, or run with
+  `--user "$(id -u):$(id -g)"` and own them yourself.
 - **Copy the templates in before the first real run**: `cp -r config.example/* /srv/syscmd/config/`.
   Started against an empty `config`, the app says so and shows an empty dashboard rather than
   inventing a lab.
@@ -267,7 +271,7 @@ a Motif frame is a stack of bevels, and every part of it — the title bar, its 
 the sunken client area — is a real element. That is what lets the decorations carry behaviour
 rather than being painted on:
 
-- The left title-bar box is the **window menu** (Restore / Minimise / Maximise / Close), exactly
+- The left title-bar box is the **window menu** (Restore / Minimize / Maximize / Close), exactly
   as Motif places it. Double-clicking it closes the window.
 - The right boxes **roll the window up** and **maximise** it. Every window has a working minimise
   box; `Collapsible` is on by default.

@@ -21,8 +21,8 @@
             {
                 <div class="cde-dropdown" @onclick:stopPropagation="true">
                     <button type="button" @onclick="Restore" disabled="@(!IsShaded && !Maximised)">Restore</button>
-                    <button type="button" @onclick="ToggleShade" disabled="@(!CanMinimise || IsShaded)">Minimise</button>
-                    <button type="button" @onclick="ToggleMaximise" disabled="@(!CanMaximise || Maximised)">Maximise</button>
+                    <button type="button" @onclick="ToggleShade" disabled="@(!CanMinimise || IsShaded)">Minimize</button>
+                    <button type="button" @onclick="ToggleMaximise" disabled="@(!CanMaximise || Maximised)">Maximize</button>
                     <hr />
                     <button type="button" @onclick="CloseIfPossible" disabled="@(!CanClose)">Close</button>
                 </div>
@@ -43,7 +43,7 @@
         @if (CanMaximise)
         {
             <button type="button" class="cw-box cw-max"
-                    title="@(Maximised ? "Restore" : "Maximise")" aria-label="@(Maximised ? "Restore" : "Maximise")"
+                    title="@(Maximised ? "Restore" : "Maximize")" aria-label="@(Maximised ? "Restore" : "Maximize")"
                     @onclick="ToggleMaximise" @onclick:stopPropagation="true">
                 <span class="glyph"></span>
             </button>
