@@ -124,6 +124,9 @@ wraps, in-process — the API exists so a CLI or TUI can drive the same lab late
 
 ## Configuration
 
+Full field-by-field reference in [`docs/configuration.md`](docs/configuration.md), and the
+expect/send language for management processors in [`docs/mp-types.md`](docs/mp-types.md).
+
 Plain YAML files, no database. Edit them by hand or through the GUI; either way the other side
 picks the change up, because the app watches the config directory.
 
