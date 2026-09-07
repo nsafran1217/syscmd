@@ -1,3 +1,5 @@
+using YamlDotNet.Serialization;
+
 namespace SysCmd.Core.Configuration;
 
 /// <summary>Power state of an outlet or a machine, as far as we can observe it.</summary>
@@ -10,9 +12,16 @@ public enum PowerAction { On, Off, Reset, Reboot }
 
 public sealed class AppConfig
 {
-    public SiteConfig Site { get; set; } = new();
-    public PowerConfig Power { get; set; } = new();
-    public OrchestrationConfig Orchestration { get; set; } = new();
+    // A section header written with nothing under it is a null value in YAML, and these sections
+    // are not optional - every reader below assumes they are there. Coalescing in the setter keeps
+    // "app.yaml has an empty power: key" a validation message rather than a null reference.
+    private SiteConfig _site = new();
+    private PowerConfig _power = new();
+    private OrchestrationConfig _orchestration = new();
+
+    public SiteConfig Site { get => _site; set => _site = value ?? new(); }
+    public PowerConfig Power { get => _power; set => _power = value ?? new(); }
+    public OrchestrationConfig Orchestration { get => _orchestration; set => _orchestration = value ?? new(); }
 }
 
 public sealed class SiteConfig
@@ -73,8 +82,14 @@ public sealed class PduTypeDefinition
     /// <summary>File stem, e.g. "apc-ap7900". Assigned by the loader, not stored in the file.</summary>
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
-    public PduSnmpConfig Snmp { get; set; } = new();
-    public PduOutletConfig Outlets { get; set; } = new();
+
+    private PduSnmpConfig _snmp = new();
+    private PduOutletConfig _outlets = new();
+
+    public PduSnmpConfig Snmp { get => _snmp; set => _snmp = value ?? new(); }
+    public PduOutletConfig Outlets { get => _outlets; set => _outlets = value ?? new(); }
+
+    /// <summary>Absent on a PDU that does not meter itself; that is a fact, not an omission.</summary>
     public PduPowerConfig? Power { get; set; }
 }
 
@@ -129,11 +144,18 @@ public sealed class PduConfig
 {
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
+
+    /// <summary>Name, or the id when it has none. See <see cref="MachineConfig.DisplayName"/>.</summary>
+    [YamlIgnore] public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Id : Name;
+
     /// <summary>Id of the pdu-type definition that describes this model's OIDs.</summary>
     public string Type { get; set; } = "";
     public string Host { get; set; } = "";
     public int Port { get; set; } = 161;
-    public SnmpCommunity Community { get; set; } = new();
+
+    private SnmpCommunity _community = new();
+    public SnmpCommunity Community { get => _community; set => _community = value ?? new(); }
+
     public int OutletCount { get; set; }
 }
 
@@ -145,12 +167,32 @@ public sealed class SnmpCommunity
 
 // --------------------------------------------------------- mp-types/*.yaml
 
+/// <summary>
+/// The task names the orchestration knows about, so the scripts, the validator and the UI all
+/// spell them the same way. An mp-type defines the ones its hardware can do and leaves out the
+/// rest: plenty of service processors can start a machine but not stop it, and some cannot say
+/// which it currently is.
+/// </summary>
+public static class MpTasks
+{
+    public const string PowerOn = "poweron";
+    public const string PowerOff = "poweroff";
+    public const string Reset = "reset";
+    public const string Status = "status";
+
+    public static readonly string[] All = [PowerOn, PowerOff, Reset, Status];
+}
+
 /// <summary>Reusable expect/send script describing how to talk to a model of management processor.</summary>
 public sealed class MpTypeDefinition
 {
     /// <summary>File stem, e.g. "hp-mp". Assigned by the loader.</summary>
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
+
+    /// <summary>What to call this in a message: its name, or the file stem when it has none.</summary>
+    [YamlIgnore] public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Id : Name;
+
     /// <summary>Currently only "telnet"; the transport layer is pluggable.</summary>
     public string Transport { get; set; } = "telnet";
     public int DefaultPort { get; set; } = 23;
@@ -169,13 +211,63 @@ public sealed class MpTypeDefinition
     /// </summary>
     public bool AllowsConcurrentSessions { get; set; }
 
-    public MpTimeouts Timeouts { get; set; } = new();
+    private MpTimeouts _timeouts = new();
+    public MpTimeouts Timeouts { get => _timeouts; set => _timeouts = value ?? new(); }
 
-    /// <summary>Task name ("poweron", "poweroff", "reset", "status") to its step list.</summary>
-    public Dictionary<string, List<ExpectStep>> Tasks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// How long to allow for a shutdown on an MP that cannot report power state, after which the
+    /// outlet is switched off anyway. Null - the default - leaves the outlet on instead, because
+    /// cutting power on a timer is a guess, and guessing is the one thing this app does not do.
+    /// Ignored when the type has a working <c>status</c> task: then the machine is asked, not timed.
+    /// </summary>
+    public int? BlindShutdownSeconds { get; set; }
+
+    /// <summary>
+    /// Task name (see <see cref="MpTasks"/>) to its step list. A model only defines what it can
+    /// do; a missing task means the operation is unavailable, not that the file is incomplete.
+    /// </summary>
+    // Rebuilt through the setter because the deserialiser assigns a fresh dictionary of its own,
+    // which would otherwise arrive with the default case-sensitive comparer and quietly miss a
+    // task someone spelled "PowerOff".
+    private Dictionary<string, List<ExpectStep>> _tasks = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, List<ExpectStep>> Tasks
+    {
+        get => _tasks;
+        set => _tasks = value is null ? new(StringComparer.OrdinalIgnoreCase)
+                                      : new(value, StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>Steps run on the way out, best-effort.</summary>
     public List<ExpectStep> Logout { get; set; } = new();
+
+    // ------------------------------------------------------------- capabilities
+    //
+    // Derived, never stored. YamlIgnore keeps them out of a file the app writes back: an mp-type
+    // is hand-edited today, but a computed property with a public getter is exactly what a
+    // serialiser would helpfully persist.
+
+    /// <summary>
+    /// The steps for a task, or null when this model does not offer it. A key present with no
+    /// steps under it counts as absent: a half-written <c>poweroff:</c> should disable the
+    /// operation, not send an empty script at the hardware and call it done.
+    /// </summary>
+    public List<ExpectStep>? Task(string name)
+        => Tasks.GetValueOrDefault(name) is { Count: > 0 } steps ? steps : null;
+
+    public bool Supports(string task) => Task(task) is not null;
+
+    [YamlIgnore] public bool CanPowerOn => Supports(MpTasks.PowerOn);
+    [YamlIgnore] public bool CanPowerOff => Supports(MpTasks.PowerOff);
+    [YamlIgnore] public bool CanReset => Supports(MpTasks.Reset);
+
+    /// <summary>
+    /// Whether the status task can actually say on or off. Steps without a match block only walk
+    /// the MP's menus: they prove it is answering, never what state the system is in. Without this
+    /// there is nothing to confirm a shutdown against, which is what the whole power-off sequence
+    /// turns on.
+    /// </summary>
+    [YamlIgnore] public bool ReportsPowerState
+        => Task(MpTasks.Status)?.Any(s => s?.Match is { Count: > 0 }) ?? false;
 }
 
 public sealed class MpTimeouts
@@ -236,6 +328,14 @@ public sealed class MachineConfig
 {
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
+
+    /// <summary>
+    /// What to call this machine anywhere an operator will read it - job titles, event log lines,
+    /// confirmation dialogs. A machine may be configured without a name; the id stands in, rather
+    /// than a sentence with a hole in it.
+    /// </summary>
+    [YamlIgnore] public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Id : Name;
+
     public string? Description { get; set; }
     public List<string> Tags { get; set; } = new();
     public MachinePduBinding? Pdu { get; set; }
@@ -292,6 +392,9 @@ public sealed class GroupConfig
 {
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
+
+    /// <summary>Name, or the id when it has none. See <see cref="MachineConfig.DisplayName"/>.</summary>
+    [YamlIgnore] public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Id : Name;
     /// <summary>Machine ids, in the order they should be powered on.</summary>
     public List<string> Machines { get; set; } = new();
     /// <summary>Delay between starting each member, to spread inrush current.</summary>

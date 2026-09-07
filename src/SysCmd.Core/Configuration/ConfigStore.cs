@@ -49,7 +49,19 @@ public sealed class ConfigStore : IDisposable
             ? (LoadOne<GroupsFile>(Paths.GroupsFile, "groups.yaml", issues)?.Groups ?? [])
             : [];
 
-        issues.AddRange(ConfigValidator.Validate(app, pduTypes, mpTypes, pdus, servers, machines, groups));
+        // The validator guards each file itself; this is the backstop, so that however badly a
+        // config file is mangled the app still starts and says so on /config rather than dying
+        // with a stack trace nobody can trace back to a YAML key.
+        try
+        {
+            issues.AddRange(ConfigValidator.Validate(app, pduTypes, mpTypes, pdus, servers, machines, groups));
+        }
+        catch (Exception ex)
+        {
+            issues.Add(new(ConfigIssueSeverity.Error, "config",
+                $"the configuration could not be checked: {ex.Message}"));
+            _log.LogError(ex, "Config validation failed");
+        }
 
         var snapshot = new ConfigSnapshot
         {

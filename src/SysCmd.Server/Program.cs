@@ -59,7 +59,18 @@ if (simulate) app.Services.GetRequiredService<SimulatorHost>().Start();
 
 // Load config before anything serves a request, then keep watching for hand edits.
 var store = app.Services.GetRequiredService<ConfigStore>();
-store.Load();
+try
+{
+    store.Load();
+}
+catch (Exception ex)
+{
+    // A single bad YAML file is reported as an issue and everything else still loads, so getting
+    // here means the config directory itself is unreadable. Say which one, and say it in the
+    // terminal: a stack trace on stdout is not a diagnosis.
+    Console.Error.WriteLine($"The configuration at {configRoot} could not be read: {ex.Message}");
+    return 1;
+}
 store.StartWatching();
 
 app.Services.GetRequiredService<PowerSummaryCache>().Seed();
@@ -70,6 +81,11 @@ events.Info("app", $"syscmd started ({(simulate ? "simulated" : "live")} hardwar
 foreach (var issue in store.Current.Issues)
     events.Write(issue.Severity == ConfigIssueSeverity.Error ? EventLevel.Error : EventLevel.Warning,
         "config", $"{issue.File}: {issue.Message}");
+
+// Printed as well as logged and shown on /config, because a config problem is the usual reason a
+// lab does not behave as expected and the terminal is where whoever just started it is looking.
+// The app still comes up: every object that loaded cleanly works, and the broken ones say so.
+PrintConfigProblems(store.Current.Issues);
 
 app.UseStaticFiles();
 app.UseAntiforgery();
@@ -105,6 +121,34 @@ app.Map("/ws/console/{machineId}", async (
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();
+return 0;
+
+static void PrintConfigProblems(IEnumerable<ConfigIssue> issues)
+{
+    var byFile = issues
+        .OrderByDescending(i => i.Severity)
+        .GroupBy(i => i.File)
+        .ToList();
+    if (byFile.Count == 0) return;
+
+    var errors = issues.Count(i => i.Severity == ConfigIssueSeverity.Error);
+    Console.Error.WriteLine();
+    Console.Error.WriteLine(errors > 0
+        ? $"Configuration problems ({errors} {(errors == 1 ? "error" : "errors")}); everything else still loaded:"
+        : "Configuration notes:");
+
+    foreach (var file in byFile)
+    {
+        Console.Error.WriteLine($"  {file.Key}");
+        foreach (var issue in file)
+            Console.Error.WriteLine($"    {issue.Severity.ToString().ToLowerInvariant()}: {issue.Message}");
+    }
+
+    Console.Error.WriteLine(errors > 0
+        ? "  Fix the files and they reload on save, or review them at /config."
+        : "  Also listed on /config.");
+    Console.Error.WriteLine();
+}
 
 /// <summary>
 /// Walk up from the content root to find the directory holding the config folders, so the app can

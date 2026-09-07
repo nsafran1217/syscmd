@@ -12,6 +12,9 @@ public static class YamlIo
     private static readonly IDeserializer Deserializer = new DeserializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .IgnoreUnmatchedProperties()
+        // Ahead of everything else, so an empty key becomes an empty list or map instead of the
+        // null that YamlDotNet would otherwise hand to a property that can never hold one.
+        .WithNodeDeserializer(new EmptyForNullNodeDeserializer(), s => s.OnTop())
         .Build();
 
     private static readonly ISerializer Serializer = new SerializerBuilder()

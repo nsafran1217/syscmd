@@ -46,7 +46,24 @@ public sealed class ConfigSnapshot
     public GroupConfig? Group(string id) => Groups.FirstOrDefault(g => g.Id == id);
 
     /// <summary>The type definition backing a PDU instance, or null if the type is missing.</summary>
-    public PduTypeDefinition? TypeOf(PduConfig pdu) => PduTypes.GetValueOrDefault(pdu.Type);
+    public PduTypeDefinition? TypeOf(PduConfig pdu) => Lookup(PduTypes, pdu.Type);
+
+    /// <summary>
+    /// The mp-type driving a machine's management processor: null when it has no MP, or when the
+    /// type it names does not exist. Every caller wants the same three-step lookup, so it lives
+    /// here rather than being written out at each one.
+    /// </summary>
+    public MpTypeDefinition? MpTypeFor(MachineConfig machine)
+        => machine.Mp is { } mp ? MpTypeFor(mp) : null;
+
+    public MpTypeDefinition? MpTypeFor(MachineMpConfig mp) => Lookup(MpTypes, mp.Type);
+
+    /// <summary>
+    /// A type id read from a hand-edited file can be missing entirely - `type:` with nothing after
+    /// it - and an empty key is not something a dictionary will look up for you.
+    /// </summary>
+    private static T? Lookup<T>(ImmutableDictionary<string, T> types, string id) where T : class
+        => string.IsNullOrWhiteSpace(id) ? null : types.GetValueOrDefault(id);
 
     /// <summary>The machine wired to a given outlet, if any.</summary>
     public MachineConfig? MachineOnOutlet(string pduId, int outlet) => Machines.Values
