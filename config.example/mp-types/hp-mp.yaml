@@ -1,4 +1,4 @@
-# HP Integrity Management Processor (MP / iLO for Integrity).
+# HP Integrity Management Processor (MP / iLO for Integrity/rp series).
 #
 # Script syntax:
 #   expect  - substring to wait for, or /regex/ with optional i, m, s flags
@@ -6,9 +6,16 @@
 #             Supports {username}, {password}, \r \n \t \e \xNN and ^X control escapes.
 #   match   - on a step, tests the output that arrived while waiting for its expect,
 #             and reports the machine's power state. Only the "status" task needs this.
-name: HP Integrity MP
+#
+# syscmd runs four tasks: poweron, poweroff, reset and status. Define the ones this model of
+# service processor actually has and leave the rest out - a missing task disables that operation
+# and greys it out in the GUI, which is a normal thing for a file to say. Do not write a task key
+# with nothing under it: that is reported as an error, because it reads as an unfinished edit
+# rather than a decision. See ibm-p7.yaml for a model that can only start a machine.
+name: HP Integrity/rp MP
 transport: telnet
 defaultPort: 23
+allowsConcurrentSessions: true
 
 timeouts:
   expectSeconds: 20
@@ -17,68 +24,58 @@ timeouts:
 # The MP's idle prompt, for reference and for the GUI to display.
 prompt: "MP>"
 
-# An HP Integrity MP accepts several telnet logins at once, so a console window open on it
-# does not have to block a power job. Only applies to a direct address: reached through a
-# console server it is still one serial wire.
-allowsConcurrentSessions: true
-
 login:
-  - expect: "login:"
+  - expect: "MP login:"
     send: "{username}"
-  - expect: "password:"
+  - expect: "MP password:"
     send: "{password}"
 
 tasks:
+  # "cm" enters the command menu, "pc" is power control, "ma" returns to the main menu.
   poweron:
     - expect: "MP>"
       send: "cm"
-    - expect: "CM:"
+    - expect: "MP:CM>"
       send: "pc"
     - expect: "Quit:"
       send: "on"
     - expect: "(Y/"
       send: "y"
-    - expect: "CM:"
+    - expect: "MP:CM>"
       send: "ma"
 
-  # "g" is the graceful shutdown option; use "off" here for a hard power cut instead.
+  # "off" is a hard power cut; "g" asks for a graceful shutdown on MPs that offer it.
   poweroff:
     - expect: "MP>"
       send: "cm"
-    - expect: "CM:"
-      send: "pc"
-    - expect: "Quit:"
-      send: "g"
-    - expect: "(Y/"
-      send: "y"
-    - expect: "CM:"
-      send: "ma"
-
-  reset:
-    - expect: "MP>"
-      send: "cm"
-    - expect: "CM:"
+    - expect: "MP:CM>"
       send: "pc"
     - expect: "Quit:"
       send: "off"
     - expect: "(Y/"
       send: "y"
-    - expect: "CM:"
+    - expect: "MP:CM>"
+      send: "ma"
+
+  reset:
+    - expect: "MP>"
+      send: "cm"
+    - expect: "MP:CM>"
       send: "pc"
     - expect: "Quit:"
-      send: "on"
+      send: "c"
     - expect: "(Y/"
       send: "y"
-    - expect: "CM:"
+    - expect: "MP:CM>"
       send: "ma"
 
   status:
     - expect: "MP>"
       send: "cm"
-    - expect: "CM:"
+    - expect: "MP:CM>"
       send: "ps"
     # Waiting for the prompt after "ps" captures the power line it printed on the way.
-    - expect: "CM:"
+    - expect: "MP:CM>"
       match:
         on: "/System Power[^:]*:\\s*on/i"
         off: "/System Power[^:]*:\\s*off/i"

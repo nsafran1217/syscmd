@@ -5,19 +5,19 @@ name: HP iLO (telnet)
 transport: telnet
 defaultPort: 23
 
+# iLO handles concurrent sessions, so a console window open on it does not block a power job.
+allowsConcurrentSessions: true
+
 timeouts:
   expectSeconds: 25
   connectSeconds: 10
 
 prompt: "hpiLO->"
 
-# iLO handles concurrent sessions.
-allowsConcurrentSessions: true
-
 login:
   - expect: "login:"
     send: "{username}"
-  - expect: "assword:"
+  - expect: "password:"
     send: "{password}"
 
 tasks:
@@ -37,6 +37,7 @@ tasks:
       send: "power reset"
     - expect: "hpiLO->"
 
+  # Bare "power" prints the current state; the next prompt is what carries it back.
   status:
     - expect: "hpiLO->"
       send: "power"

@@ -1,0 +1,73 @@
+# HP iLO 2 on Integrity rx2800.
+#
+# The same command menu as the older Integrity MP, but every prompt carries the iLO name, so the
+# expects differ from hp-mp.yaml even though the keystrokes are identical. Matching the prompt
+# exactly is what keeps the script in step: "CM:hpiLO->" only appears inside the command menu.
+name: HP iLO Integrity
+transport: telnet
+defaultPort: 23
+allowsConcurrentSessions: true
+
+timeouts:
+  expectSeconds: 25
+  connectSeconds: 10
+
+prompt: "hpiLO->"
+
+login:
+  - expect: "MP login:"
+    send: "{username}"
+  - expect: "MP password:"
+    send: "{password}"
+
+tasks:
+  poweron:
+    - expect: "hpiLO->"
+      send: "cm"
+    - expect: "CM:hpiLO->"
+      send: "pc"
+    - expect: "Quit:"
+      send: "on"
+    - expect: "(Y/"
+      send: "y"
+    - expect: "CM:hpiLO->"
+      send: "ma"
+
+  poweroff:
+    - expect: "hpiLO->"
+      send: "cm"
+    - expect: "CM:hpiLO->"
+      send: "pc"
+    - expect: "Quit:"
+      send: "off"
+    - expect: "(Y/"
+      send: "y"
+    - expect: "CM:hpiLO->"
+      send: "ma"
+
+  reset:
+    - expect: "hpiLO->"
+      send: "cm"
+    - expect: "CM:hpiLO->"
+      send: "pc"
+    - expect: "Quit:"
+      send: "c"
+    - expect: "(Y/"
+      send: "y"
+    - expect: "CM:hpiLO->"
+      send: "ma"
+
+  status:
+    - expect: "hpiLO->"
+      send: "cm"
+    - expect: "CM:hpiLO->"
+      send: "ps"
+    # Waiting for the prompt after "ps" captures the power line it printed on the way.
+    - expect: "CM:hpiLO->"
+      match:
+        on: "/System Power[^:]*:\\s*on/i"
+        off: "/System Power[^:]*:\\s*off/i"
+      send: "ma"
+
+logout:
+  - send: "x"

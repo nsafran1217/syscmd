@@ -1,0 +1,57 @@
+# IBM Power 740 - a service processor that can only start the machine.
+#
+# Without an HMC there is very little reachable over serial: the ASMI menus will power the
+# system partition on and nothing else. So this file defines "poweron" and stops there, which
+# is a supported thing for an mp-type to say rather than an unfinished file:
+#
+#   no "poweroff"  - powering the machine off switches its outlet off directly, without asking
+#                    the machine to shut down first. The GUI says so before it does it, and the
+#                    event log records that it happened.
+#   no "status"    - nothing can read the power state back, so the power-on sequence is retried
+#                    until the service processor accepts it and then reported as sent but
+#                    unconfirmed. It is also why the outlet cut above cannot be confirmed either.
+#   no "reset"     - the reset action is refused up front, in the GUI and over the API.
+#
+# If a model like this *can* be told to shut down but still cannot report state, define poweroff
+# and set blindShutdownSeconds: the outlet is then switched off that long after the command goes
+# out, rather than the job failing for want of a confirmation. It is opt-in per hardware type
+# because nothing has confirmed the machine is down, and every cut made that way is logged.
+name: IBM Power 7
+transport: telnet
+defaultPort: 23
+
+timeouts:
+  expectSeconds: 20
+  connectSeconds: 10
+
+prompt: "S1>"
+
+# Two blank lines wake the console before it will show the prompt, and the terminal-size
+# questions after the password have to be answered before the menu appears.
+login:
+  - send: ""
+    delayMs: 500
+  - expect: "User ID:"
+    send: "{username}"
+  - expect: "Password:"
+    send: "{password}"
+  - expect: "columns"
+    send: ""
+  - expect: "lines"
+    send: ""
+
+tasks:
+  # Menu keystrokes, not commands: 1 = system service aids, 1 = power control, 8 = power on.
+  poweron:
+    - expect: "S1>"
+      send: "1"
+    - expect: "S1>"
+      send: "1"
+    - expect: "S1>"
+      send: "8"
+    - expect: "The system is powering on"
+      send: ""
+
+# 99 backs out of the menus on the way off.
+logout:
+  - send: "99"

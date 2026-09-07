@@ -3,14 +3,15 @@ name: Sun ALOM
 transport: telnet
 defaultPort: 23
 
+# Whether the MP tolerates more than one login at once. Only consulted for a direct address:
+# reached through a console server it is one serial wire whatever is on the end of it.
+allowsConcurrentSessions: true
+
 timeouts:
   expectSeconds: 20
   connectSeconds: 10
 
 prompt: "sc>"
-
-# ALOM serves a single session at a time, so syscmd holds it exclusively.
-allowsConcurrentSessions: false
 
 login:
   - expect: "login:"
@@ -24,7 +25,7 @@ tasks:
       send: "poweron"
     - expect: "sc>"
 
-  # -y answers the confirmation prompt; drop -f to request a graceful shutdown.
+  # -y answers the confirmation prompt; add -f for a hard cut instead of a graceful shutdown.
   poweroff:
     - expect: "sc>"
       send: "poweroff -y"
@@ -42,7 +43,7 @@ tasks:
       send: "showplatform"
     - expect: "sc>"
       match:
-        on: "/running/i"
+        on: "/Reset/i"
         off: "/powered off|standby/i"
 
 logout:

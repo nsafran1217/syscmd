@@ -1,0 +1,50 @@
+# Sun Lights Out Manager (LOM) - a flat "lom>" shell rather than nested menus.
+#
+# There is no login on a LOM: it shares the serial line with the host console and "#." is the
+# escape sequence that switches the line from the OS to the LOM. Sent with noNewline, because it
+# is an escape sequence rather than a command, followed by a bare return to draw the prompt.
+name: Sun LOM
+transport: telnet
+defaultPort: 23
+
+timeouts:
+  expectSeconds: 20
+  connectSeconds: 10
+
+prompt: "lom>"
+
+login:
+  - send: "#."
+    noNewline: true
+    delayMs: 500
+  - send: ""
+
+tasks:
+  # Each power command hands the line back to the host console, so "#." escapes to the LOM again.
+  poweron:
+    - expect: "lom>"
+      send: "poweron"
+    - expect: "host power on"
+      send: "#."
+
+  poweroff:
+    - expect: "lom>"
+      send: "poweroff"
+    - expect: "host power off"
+      timeoutSeconds: 60
+
+  reset:
+    - expect: "lom>"
+      send: "reset"
+    - expect: "host reset"
+      timeoutSeconds: 60
+
+  status:
+    - expect: "lom>"
+      send: "environment"
+    - expect: "lom>"
+      match:
+        on: "/CPU OK/i"
+        off: "/CPU standby/i"
+
+# No logout: leaving the session simply drops the line back to the host console.
