@@ -276,15 +276,18 @@
                             <td>
                                 @* These go through the management processor: outlet power, then the
                                    MP power-on sequence; and a confirmed shutdown before the cut. *@
+                                @* Enabled by what the machine can actually be asked to do, which
+                                   for on and off means an outlet is enough - an MP only decides
+                                   whether the system itself is brought up or shut down first. *@
                                 <div class="btn-row nowrap">
-                                    <button class="cde-btn small" disabled="@m.IsBusy"
-                                            title="Apply outlet power and bring the system up through its management processor"
+                                    <button class="cde-btn small" disabled="@(m.IsBusy || !m.Capabilities.CanPowerOn)"
+                                            title="@PowerPrompts.OnTooltip(m.Capabilities, m.MpTypeName)"
                                             @onclick="() => MachinePowerAsync(m, PowerAction.On)">On</button>
-                                    <button class="cde-btn small" disabled="@m.IsBusy"
-                                            title="Shut the system down, then switch its outlet off"
+                                    <button class="cde-btn small" disabled="@(m.IsBusy || !m.Capabilities.CanPowerOff)"
+                                            title="@PowerPrompts.OffTooltip(m.Capabilities, m.MpTypeName)"
                                             @onclick="() => MachinePowerAsync(m, PowerAction.Off)">Off</button>
-                                    <button class="cde-btn small" disabled="@(m.IsBusy || m.MpType is null)"
-                                            title="@(m.MpType is null ? "No management processor" : "Reset through the management processor")"
+                                    <button class="cde-btn small" disabled="@(m.IsBusy || !m.Capabilities.CanReset)"
+                                            title="@PowerPrompts.ResetTooltip(m.Capabilities, m.MpTypeName)"
                                             @onclick="() => MachinePowerAsync(m, PowerAction.Reset)">Reset</button>
                                 </div>
                             </td>
@@ -348,7 +351,7 @@
         <button @onclick="() => RunOutletAsync(menu, PowerAction.On, force: false)">
             Switch outlet on
         </button>
-        <button disabled="@(!menu.HasMp)"
+        <button disabled="@(!menu.CanPowerOn)"
                 @onclick="() => RunMachineAsync(menu.MachineId!, PowerAction.On)">
             Power on system via management processor
         </button>
@@ -363,7 +366,7 @@
             Power cycle outlet
         </button>
         <hr />
-        <button disabled="@(menu.MachineId is null)"
+        <button disabled="@(!menu.CanReset)"
                 @onclick="() => RunMachineAsync(menu.MachineId!, PowerAction.Reset)">
             Reset via management processor
         </button>
@@ -409,12 +412,22 @@
             ? [.. pdu.Outlets.Where(o => o.MachineId is not null)]
             : pdu.Outlets;
 
+    /// <summary>
+    /// The confirmation for switching an outlet off. An outlet with no machine on it is this page's
+    /// own case; everything else is the shared wording, so the machine list and a console window
+    /// warn about the same thing in the same words.
+    /// </summary>
+    private static string OffConfirmMessage(MachineStatus? m, string name) =>
+        m is null
+            ? $"Switch {name} off? Nothing is configured on this outlet, so it will be cut immediately."
+            : PowerPrompts.OffConfirm(m.Capabilities, name, m.MpTypeName);
+
     private OutletMenu? _menu;
     private PendingConfirm? _confirm;
 
     private sealed record OutletMenu(
         string Title, double X, double Y, string PduId, int Outlet,
-        string? MachineId, bool HasMp, bool HasSerial);
+        string? MachineId, bool HasMp, bool HasSerial, bool CanPowerOn, bool CanReset);
 
     private sealed record PendingConfirm(
         string Title, string Message, string ConfirmLabel, bool Destructive, Func<Task> Action);
@@ -500,11 +513,13 @@
         if (action == PowerAction.Off && !_skipConfirm)
         {
             var name = outlet.DisplayName;
+            var machine = outlet.MachineId is null
+                ? null
+                : _machines.FirstOrDefault(m => m.Id == outlet.MachineId);
+
             _confirm = new PendingConfirm(
                 "Power off",
-                outlet.MachineId is null
-                    ? $"Switch {name} off? Nothing is configured on this outlet, so it will be cut immediately."
-                    : $"Shut {name} down and switch its outlet off? ",
+                OffConfirmMessage(machine, name),
                 "Power off", Destructive: true,
                 () => StartAsync(() => Power.EnqueueOutlet(outlet.PduId, outlet.Outlet, PowerAction.Off, force: false)));
             return;
@@ -530,7 +545,9 @@
             pdu.PduId, outlet.Outlet,
             outlet.MachineId,
             machine?.HasMpConsole ?? false,
-            machine?.HasSerialConsole ?? false);
+            machine?.HasSerialConsole ?? false,
+            machine?.Capabilities.MpPowerOn ?? false,
+            machine?.Capabilities.CanReset ?? false);
     }
 
     private void CloseMenu() => _menu = null;
@@ -574,7 +591,7 @@
         _confirm = action == PowerAction.Off
             ? new PendingConfirm(
                 "Power off",
-                $"Shut {machine.Name} down and switch its outlet off? ",
+                OffConfirmMessage(machine, machine.Name),
                 "Power off", Destructive: true,
                 () => StartAsync(() => Power.EnqueueMachinePower(machine.Id, PowerAction.Off, force: false)))
             : new PendingConfirm(

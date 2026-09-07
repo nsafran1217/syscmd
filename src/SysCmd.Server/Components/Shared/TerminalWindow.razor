@@ -79,19 +79,25 @@
     }
 
     /// <summary>
-    /// Whether this machine has a management processor at all. Everything on the Power menu goes
-    /// through one, so without it the whole menu greys out rather than offering actions that
-    /// would only fail: EnqueueMachinePower refuses a reset with no MP by design.
+    /// What this window's machine can be asked to do. The same answer the machine list greys its
+    /// buttons out from, so the Power menu here offers exactly what that page offers - including
+    /// on and off for a machine with no service processor but an outlet, which is most of what a
+    /// terminal-server-only machine is.
     /// </summary>
-    private bool HasMp => Config.Current.Machine(Window.MachineId)?.Mp is not null;
+    private MachineCapabilities Caps => MachineCapabilities.For(Config.Current, Window.MachineId);
+
+    private MpTypeDefinition? MpType =>
+        Config.Current.Machine(Window.MachineId) is { } machine
+            ? Config.Current.MpTypeFor(machine)
+            : null;
 
     /// <summary>
     /// Whether this machine's mp-type defines any login steps. LoginAssistant refuses without
     /// them, so the button would only ever explain itself.
     /// </summary>
-    private bool HasLoginScript =>
-        Config.Current.Machine(Window.MachineId)?.Mp is { } mp
-        && Config.Current.MpTypes.GetValueOrDefault(mp.Type) is { Login.Count: > 0 };
+    private bool HasLoginScript => MpType is { Login.Count: > 0 };
+
+    private string? MpTypeName => MpType?.DisplayName;
 
     private string Geometry =>
         $"left:{Window.X}px; top:{Window.Y}px; width:{Window.Width}px; height:{Window.Height}px; z-index:{Window.ZIndex};";
@@ -148,12 +154,15 @@
                 MnemonicIndex = 0,
                 Items =
                 [
-                    // All three go through the management processor, so all three are dead
-                    // without one. A machine reached over a console server may well have none.
-                    CdeMenuItem.Of("Power on", () => StartPowerAsync(PowerAction.On), disabled: !HasMp),
-                    CdeMenuItem.Of("Power off", () => AskPowerAsync(PowerAction.Off), disabled: !HasMp),
+                    // On and off need only an outlet; reset has no equivalent and is dead
+                    // without a management processor that defines the task.
+                    CdeMenuItem.Of("Power on", () => StartPowerAsync(PowerAction.On),
+                        disabled: !Caps.CanPowerOn),
+                    CdeMenuItem.Of("Power off", () => AskPowerAsync(PowerAction.Off),
+                        disabled: !Caps.CanPowerOff),
                     CdeMenuItem.Separator,
-                    CdeMenuItem.Of("Reset", () => AskPowerAsync(PowerAction.Reset), disabled: !HasMp),
+                    CdeMenuItem.Of("Reset", () => AskPowerAsync(PowerAction.Reset),
+                        disabled: !Caps.CanReset),
                 ],
             },
             new CdeMenu
@@ -311,8 +320,7 @@
 
         _confirm = action == PowerAction.Off
             ? new PendingPower(action, "Power off", "Power off",
-                $"Shut {name} down through its management processor and switch its outlet off? " +
-                "The outlet stays on if it never confirms it is down.")
+                PowerPrompts.OffConfirm(Caps, name, MpTypeName))
             : new PendingPower(action, "Reset", "Reset",
                 $"Reset {name} through its management processor? " +
                 "Anything running on it stops without a clean shutdown.");

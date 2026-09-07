@@ -56,9 +56,23 @@ out and let the filename supply it.
 ### Validation
 
 Problems are reported, not thrown. One bad file marks that object broken and everything else still
-loads, so a typo cannot stop the app booting. Issues appear on the Configuration page and in the
-event log at startup, each as an **error** (the object is unusable) or a **warning** (it works,
-but something is worth knowing). Every rule is listed under its file type below.
+loads, so a typo cannot stop the app booting. Issues appear on the Configuration page, in the event
+log, and printed to the terminal at startup, each as an **error** (the object is unusable) or a
+**warning** (it works, but something is worth knowing). Every rule is listed under its file type
+below.
+
+That includes files mangled in ways no rule anticipates: each object is checked inside a guard, so
+an unforeseen problem becomes an issue naming the file rather than an exception on the way up. One
+shape worth knowing about, because YAML makes it easy to write by accident, is a key with nothing
+under it:
+
+```yaml
+tasks:
+  poweroff:        # a null, not an empty list
+```
+
+A key like that is read as empty rather than missing, so nothing downstream trips over it, and the
+validator reports it where the emptiness matters.
 
 ### Secrets
 
@@ -258,8 +272,9 @@ Three combinations are all valid and all mean something:
   for it rather than collide, so opening the console really does reserve it and a power job reports
   *"already in use"* within seconds instead of hanging.
 - **`serial` only, no `mp`** — reached over a terminal server with no service processor anywhere.
-  The console opens; everything on the console's Power menu greys out, because it all goes through
-  an MP.
+  The console opens, and its Power menu still offers on and off if the machine is on an outlet:
+  they switch the outlet, and the confirmation says so. Only Reset greys out, because there is no
+  outlet equivalent of it.
 
 **Validation:**
 
@@ -269,7 +284,10 @@ Three combinations are all valid and all mean something:
 | Error | `pdu.id` has no matching file in `pdus/` |
 | Error | `pdu.outlet` is outside `1..outletCount` for that PDU |
 | Error | another machine already claims that PDU and outlet |
-| Error | `mp.type` has no matching file in `mp-types/` |
+| Error | `mp.type` is empty, or has no matching file in `mp-types/` |
+| Warning | the `mp.type` has no power-off task, so powering this machine off cuts its outlet without shutting it down — see [mp-types](mp-types.md#defining-only-what-the-hardware-has) |
+| Warning | the `mp.type` cannot confirm a shutdown, so the outlet is left on unless it sets `blindShutdownSeconds` |
+| Warning | the `mp.type` has no `poweron` task, so powering on applies outlet power only |
 | Error | `mp` sets neither `host` nor `via` |
 | Error | `mp` sets **both** `host` and `via` |
 | Error | `mp.via.server` or `serial.server` has no matching file in `console-servers/` |

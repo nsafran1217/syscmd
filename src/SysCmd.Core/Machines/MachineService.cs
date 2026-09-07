@@ -41,7 +41,7 @@ public sealed class MachineService(ConfigStore config, PduService pdus, JobQueue
 
         var job = jobs.ActiveForMachine(machine.Id);
 
-        return new MachineStatus(machine.Id, string.IsNullOrWhiteSpace(machine.Name) ? machine.Id : machine.Name)
+        return new MachineStatus(machine.Id, machine.DisplayName)
         {
             Description = machine.Description,
             Tags = machine.Tags,
@@ -51,7 +51,9 @@ public sealed class MachineService(ConfigStore config, PduService pdus, JobQueue
             Outlet = machine.Pdu?.Outlet,
             Watts = outlet?.Watts,
             MpType = machine.Mp?.Type,
+            MpTypeName = snapshot.MpTypeFor(machine)?.DisplayName,
             MpAddress = EndpointResolver.ForMp(snapshot, machine)?.ToString(),
+            Capabilities = MachineCapabilities.For(snapshot, machine),
             SerialAddress = EndpointResolver.ForSerial(snapshot, machine)?.ToString(),
             Addresses = machine.Addresses,
             ActiveJobId = job?.Id,

@@ -21,24 +21,28 @@ public sealed class ExpectScriptDriver(EndpointBroker broker, EventLog events) :
         Action<string>? progress, CancellationToken ct)
     {
         if (machine.Mp is not { } mp)
-            return new MpResult(false, PowerState.Unknown, "", $"{machine.Name} has no management processor configured.");
+            return new MpResult(false, PowerState.Unknown, "", $"{machine.DisplayName} has no management processor configured.");
 
-        if (snapshot.MpTypes.GetValueOrDefault(mp.Type) is not { } type)
+        if (snapshot.MpTypeFor(mp) is not { } type)
             return new MpResult(false, PowerState.Unknown, "", $"MP type '{mp.Type}' is not defined.");
 
-        if (!type.Tasks.TryGetValue(task, out var steps))
-            return new MpResult(false, PowerState.Unknown, "", $"MP type '{mp.Type}' defines no '{task}' task.");
+        // A model that cannot do something simply leaves the task out of its file, so this is a
+        // routine answer rather than a broken configuration. An empty task counts as absent too.
+        if (type.Task(task) is not { } steps)
+            return new MpResult(false, PowerState.Unknown, "",
+                $"MP type '{mp.Type}' defines no '{task}' task, so {machine.DisplayName} cannot do that " +
+                "through its management processor.");
 
         if (EndpointResolver.ForMp(snapshot, machine) is not { } endpoint)
-            return new MpResult(false, PowerState.Unknown, "", $"Could not resolve an address for {machine.Name}'s MP.");
+            return new MpResult(false, PowerState.Unknown, "", $"Could not resolve an address for {machine.DisplayName}'s MP.");
 
-        progress?.Invoke($"Connecting to {endpoint} ({type.Name})");
+        progress?.Invoke($"Connecting to {endpoint} ({type.DisplayName})");
 
         // A busy endpoint is deliberately allowed to propagate: the caller needs to know the wire
         // is held by someone else, not retry into a queue behind an idle console window.
         var exclusive = EndpointResolver.RequiresExclusiveSession(snapshot, machine, ConsoleTarget.Mp);
         await using var lease = await broker.AcquireAsync(
-            endpoint, $"{task} on {machine.Name}", LeaseWait, ct, exclusive);
+            endpoint, $"{task} on {machine.DisplayName}", LeaseWait, ct, exclusive);
 
         TelnetSession session;
         try
@@ -91,14 +95,14 @@ public sealed class ExpectScriptDriver(EndpointBroker broker, EventLog events) :
 
             await TryLogoutAsync(engine, type, vars, ct);
 
-            events.Write(EventLevel.Debug, "mp", $"{task} on {machine.Name} finished",
+            events.Write(EventLevel.Debug, "mp", $"{task} on {machine.DisplayName} finished",
                 machine.Id, detail: engine.Transcript);
 
             return new MpResult(true, state, engine.Transcript);
         }
         catch (ExpectTimeoutException ex)
         {
-            events.Warn("mp", $"{task} on {machine.Name} timed out waiting for \"{ex.Pattern}\"",
+            events.Warn("mp", $"{task} on {machine.DisplayName} timed out waiting for \"{ex.Pattern}\"",
                 machine.Id, detail: engine.Transcript);
             return new MpResult(false, PowerState.Unknown, engine.Transcript, ex.Message)
             {
@@ -107,7 +111,7 @@ public sealed class ExpectScriptDriver(EndpointBroker broker, EventLog events) :
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            events.Warn("mp", $"{task} on {machine.Name} failed: {ex.Message}",
+            events.Warn("mp", $"{task} on {machine.DisplayName} failed: {ex.Message}",
                 machine.Id, detail: engine.Transcript);
             return new MpResult(false, PowerState.Unknown, engine.Transcript, ex.Message)
             {

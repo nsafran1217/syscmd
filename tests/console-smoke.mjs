@@ -115,8 +115,9 @@ await p.waitForTimeout(800);
 console.log('\n[a machine with no management processor]');
 
 // The PDP-11 is in the simulated lab precisely for this: an outlet and a terminal-server line,
-// no service processor anywhere. Everything on the Power menu goes through one, so all of it
-// has to grey out rather than offer actions that could only fail.
+// no service processor anywhere. On and off need only the outlet, so they stay live and do
+// exactly what the machine list's On and Off buttons do; reset has no outlet equivalent, so it
+// is the one that greys out.
 const row = p.locator('tr', { hasText: 'PDP-11/34A' });
 ok(await row.locator('button', { hasText: /^MP$/ }).count() === 0, 'it has no MP console to open');
 await row.locator('button', { hasText: /^Serial$/ }).first().click();
@@ -126,11 +127,25 @@ const serial = p.locator('.window-layer .cde-window').first();
 ok(await serial.count() > 0, 'its serial console still opens');
 await serial.locator('.cde-menubar > .menu-anchor > button', { hasText: 'Power' }).click();
 await p.waitForTimeout(400);
-for (const label of ['Power on', 'Power off', 'Reset']) {
-  ok(await serial.locator('.cde-menubar .cde-dropdown button', { hasText: label }).isDisabled(),
-     `${label} is greyed out without one`);
-}
+
+const serialItem = label =>
+  serial.locator('.cde-menubar .cde-dropdown button', { hasText: label });
+
+ok(!await serialItem('Power on').isDisabled(), 'Power on still works, through the outlet');
+ok(!await serialItem('Power off').isDisabled(), 'Power off still works, through the outlet');
+ok(await serialItem('Reset').isDisabled(), 'Reset is greyed out without a management processor');
 await p.screenshot({ path: `${shots}/console-no-mp.png` });
+
+// And it warns that nothing is being shut down first, rather than reusing the MP wording.
+const queued = (await api('/jobs')).length;
+await serialItem('Power off').click();
+await p.waitForTimeout(600);
+const asked = await p.locator('.cde-dialog').textContent();
+ok(/no management processor/i.test(asked), 'the dialog says the outlet is cut without a shutdown',
+   asked.replace(/\s+/g, ' ').trim().slice(0, 90));
+await p.locator('.cde-dialog button', { hasText: 'Cancel' }).click();
+await p.waitForTimeout(500);
+ok((await api('/jobs')).length === queued, 'cancelling it queued nothing');
 
 await b.close();
 console.log(`\n${pass}/${pass + fail} checks passed`);

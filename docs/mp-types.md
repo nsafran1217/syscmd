@@ -45,10 +45,11 @@ logout:                           # optional; best-effort on the way out
 | `name` | string | `""` | Display name. |
 | `transport` | string | `telnet` | **Only `telnet`.** Anything else is a config *error*, and every power job for a machine of that type fails when it runs. This is the wire protocol, not the route — reaching an MP through a terminal server is still telnet, to the terminal server's TCP port. |
 | `defaultPort` | int | `23` | Used when a machine gives `mp.host` without `mp.port`. Not used on the `via` path, where the port comes from the console server's map. |
-| `allowsConcurrentSessions` | bool | `false` | Whether the MP tolerates two logins at once. HP MP and iLO do; ALOM does not. **Ignored when the MP is reached through a console server** — that is one physical wire whatever is on the end of it. |
+| `allowsConcurrentSessions` | bool | `false` | Whether the MP tolerates two logins at once.  **Ignored when the MP is reached through a console server** — that is one physical wire whatever is on the end of it. |
 | `timeouts.expectSeconds` | int | `20` | Default wait for each step's `expect`. |
 | `timeouts.connectSeconds` | int | `10` | TCP connect timeout. |
 | `prompt` | string | — | **Currently inert.** It is parsed and stored, and nothing reads it. Harmless to set; it will not resynchronise anything. |
+| `blindShutdownSeconds` | int | — | Only consulted when this type has no working `status` task. How long to allow for a shutdown that nothing can confirm, after which the outlet is switched off anyway. Left out, the outlet stays on instead. See [Tasks](#tasks). |
 | `login` | step list | empty | Optional. See below. |
 | `logout` | step list | empty | Optional, best-effort — failures here never fail a job. |
 | `tasks` | map of name → step list | empty | See below. |
@@ -102,13 +103,63 @@ syscmd runs exactly four task names. Anything else in `tasks:` is never called.
 | `reset` | Reset through the MP |
 | `status` | Whenever the power state is needed — after a power-on, and repeatedly while waiting for a shutdown to confirm |
 
-Missing `poweron`, `poweroff` or `status` is a **warning**, and that operation is simply
-unavailable. `reset` is optional and silently so.
+### Defining only what the hardware has
+
+**Leave out what this model cannot do.** Not every service processor has all four; plenty will
+start a machine and offer nothing else. A missing task is a statement about the hardware, not an
+unfinished file — syscmd greys that action out in the GUI and reports it over the API rather than
+letting somebody start a job that could only fail. Each one is noted as a warning on the
+Configuration page so the limitation is visible, not silent.
+
+| Missing | What syscmd does instead |
+|---|---|
+| `poweron` | Powering the machine on applies outlet power and the job reports that is all it controls. Fine for a machine that starts itself when mains power returns. |
+| `status` | There is nothing to probe with, so the power-on sequence becomes its own probe: it is re-offered until the MP accepts it, then reported as **sent but unconfirmed**. |
+| `poweroff` | There is no shutdown to ask for, so powering the machine off **switches its outlet off directly** — the same thing that happens for a machine with no MP at all. The confirmation dialog says nothing will be shut down first, and the cut is logged as a warning. |
+| `reset` | The reset action is refused up front, in the GUI and over the API. |
+
+A task key written with **nothing under it** is a different thing and is reported as an *error*:
+
+```yaml
+tasks:
+  poweroff:          # <- an error, not "unsupported"
+  poweron:
+    - expect: ">"
+      send: "power on"
+```
+
+It reads as an edit somebody stopped half way through rather than a decision, so it is worth
+hearing about. The operation is treated as unavailable either way — an empty script is never sent
+at the hardware.
+
+### Shutting down without confirmation
+
+Note the asymmetry between the last two. With no `poweroff` there is nothing to wait for, so the
+outlet goes off; with a `poweroff` but no `status`, the machine *was* told to stop and whether it
+did is a question worth asking, so the outlet is held until it can be answered.
+
+An MP that can be told to shut down but cannot report state is the one case with a choice in it.
+By default the command goes out, nothing confirms it, and the outlet is **left on** with the job
+failing — the same answer a confirmation timeout gives, for the same reason: nothing has said the
+machine is down.
+
+`blindShutdownSeconds` trades that for a fixed wait:
+
+```yaml
+# This model takes about two minutes to shut down and never says so.
+blindShutdownSeconds: 120
+```
+
+The outlet is then switched off that long after the power-off sequence is sent. It is opt-in per
+hardware type, so the decision is recorded in the file for the hardware it applies to, and every
+cut made this way is logged at Warning. With a working `status` task it is ignored, and the machine
+is asked rather than timed.
 
 ### status
 
 `status` is the one task with a hard requirement: **at least one step must carry a `match` block**,
-or the file is rejected as an error, because a status task that cannot report a state is useless.
+or it is reported as an error and treated as if there were no `status` task at all — a status task
+that cannot report a state is not one.
 
 ```yaml
   status:
@@ -189,7 +240,11 @@ loads. They show up on the Configuration page and in the event log at startup.
 |---|---|
 | **Error** | `transport` is anything but `telnet` |
 | **Error** | `status` exists but no step in it has a `match` block |
-| **Warning** | no `poweron`, `poweroff` or `status` task |
+| **Error** | a task key is present with no steps under it |
+| **Error** | `blindShutdownSeconds` is zero or negative |
+| **Warning** | no `poweron`, `poweroff`, `reset` or `status` task — repeated against each machine using the type |
+| **Warning** | a task name syscmd never runs |
+| **Warning** | `blindShutdownSeconds` set on a type that has `status`, or that has no `poweroff` |
 
 A validation error does not remove the type: only a file that fails to *parse* disappears, and
 machines still resolve their `type:` to it. So a bad `transport` is reported on the Configuration
@@ -282,5 +337,9 @@ serial:
 - **A power-off waits the full confirmation window and leaves the outlet on.** `status` is not
   recognising the powered-down state. That is the safety behaviour working as intended, not a bug
   — fix the `match` patterns.
+- **A power-off fails immediately saying the outlet was left on.** The type has a `poweroff` task
+  but no `status` to confirm it with. Working as intended: add a `status` task, or set
+  `blindShutdownSeconds`, or shut the machine down yourself and use Force Off. (A type with *no*
+  `poweroff` at all does not fail — it switches the outlet off.)
 - **A setting seems to do nothing.** Unmatched keys are ignored without complaint. Check the
   spelling against the tables above; `noNewline` and `delayMs` are camelCase, like every other key.

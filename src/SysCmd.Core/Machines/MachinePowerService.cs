@@ -29,10 +29,27 @@ public sealed class MachinePowerService(
         var machine = config.Current.Machine(machineId)
             ?? throw new InvalidOperationException($"Unknown machine '{machineId}'.");
 
-        if (action is PowerAction.Reset or PowerAction.Reboot && machine.Mp is null)
-            throw new InvalidOperationException(
-                $"{machine.Name} has no management processor, so it cannot be reset. " +
-                "Power cycle its outlet instead.");
+        // Refused here rather than inside the job, so a caller is told immediately instead of
+        // watching a queued job fail a second later for a reason the configuration already knew.
+        // This is the same reading of the config the GUI greys its buttons out from.
+        var caps = MachineCapabilities.For(config.Current, machine);
+        switch (action)
+        {
+            case PowerAction.On when !caps.CanPowerOn:
+                throw new InvalidOperationException(
+                    $"{machine.DisplayName} has no outlet and no management processor that can start it.");
+
+            case PowerAction.Off when !caps.CanPowerOff:
+                throw new InvalidOperationException(
+                    $"{machine.DisplayName} has no outlet and no management processor that can shut it down.");
+
+            case PowerAction.Reset or PowerAction.Reboot when !caps.CanReset:
+                throw new InvalidOperationException(caps.HasMp
+                    ? $"{MpName(config.Current, machine)} has no reset task, so " +
+                      $"{machine.DisplayName} cannot be reset from here. Power cycle its outlet instead."
+                    : $"{machine.DisplayName} has no management processor, so it cannot be reset. " +
+                      "Power cycle its outlet instead.");
+        }
 
         var verb = action switch
         {
@@ -40,7 +57,7 @@ public sealed class MachinePowerService(
             PowerAction.Off => "Power off",
             _ => "Reset",
         };
-        var title = $"{verb} {machine.Name}{(force ? " (forced)" : "")}";
+        var title = $"{verb} {machine.DisplayName}{(force ? " (forced)" : "")}";
         var target = machine.Pdu is { } b ? $"{b.Id}:{b.Outlet}" : machine.Id;
 
         return jobs.Enqueue(JobKind.MachinePower, title, target,
@@ -67,7 +84,7 @@ public sealed class MachinePowerService(
         if (machine is { Mp: not null } && !force && action == PowerAction.Off)
             return EnqueueMachinePower(machine.Id, PowerAction.Off, force: false);
 
-        var label = machine?.Name ?? $"{pdu.Name} outlet {outlet}";
+        var label = machine?.DisplayName ?? $"{pdu.DisplayName} outlet {outlet}";
         var title = $"{action} {label} (outlet only)";
 
         return jobs.Enqueue(JobKind.OutletControl, title, $"{pduId}:{outlet}",
@@ -77,10 +94,10 @@ public sealed class MachinePowerService(
                 // could have been asked to shut down first.
                 if (machine is { Mp: not null } && action is PowerAction.Off or PowerAction.Reboot)
                     events.Warn("power",
-                        $"Outlet {action} on {machine.Name} without asking its management processor.",
+                        $"Outlet {action} on {machine.DisplayName} without asking its management processor.",
                         machine.Id, job.Id);
 
-                job.Report($"Switching {pdu.Name} outlet {outlet} {action}");
+                job.Report($"Switching {pdu.DisplayName} outlet {outlet} {action}");
                 await pdus.SetOutletAsync(pduId, outlet, action, ct);
                 job.Report("Outlet switched");
             },
@@ -93,7 +110,7 @@ public sealed class MachinePowerService(
         var group = config.Current.Group(groupId)
             ?? throw new InvalidOperationException($"Unknown group '{groupId}'.");
 
-        var title = $"{(action == PowerAction.On ? "Power on" : "Power off")} group {group.Name}";
+        var title = $"{(action == PowerAction.On ? "Power on" : "Power off")} group {group.DisplayName}";
 
         return jobs.Enqueue(JobKind.GroupPower, title, groupId,
             (job, ct) => RunGroupAsync(groupId, action, force, job, ct), forced: force);
@@ -153,12 +170,41 @@ public sealed class MachinePowerService(
         if (force)
         {
             job.Report("Forced: skipping the management processor");
-            events.Warn("power", $"Forced power on for {machine.Name}; MP sequence skipped.", machine.Id, job.Id);
+            events.Warn("power", $"Forced power on for {machine.DisplayName}; MP sequence skipped.", machine.Id, job.Id);
+            return;
+        }
+
+        var type = snapshot.MpTypeFor(machine)
+            ?? throw new InvalidOperationException($"MP type '{machine.Mp.Type}' is not defined.");
+
+        // Nothing to send. Some machines start themselves the moment mains power returns, and an
+        // mp-type with no poweron task is how that is written down; either way the outlet is on
+        // and this is as far as syscmd can take it.
+        if (!type.CanPowerOn)
+        {
+            job.Report($"{type.DisplayName} has no power-on task; outlet power is all we control");
             return;
         }
 
         if (EndpointResolver.ForMp(snapshot, machine) is not { } endpoint)
-            throw new InvalidOperationException($"Could not resolve an address for {machine.Name}'s MP.");
+            throw new InvalidOperationException($"Could not resolve an address for {machine.DisplayName}'s MP.");
+
+        if (!type.ReportsPowerState)
+        {
+            // With no status task there is nothing to probe with, so the power-on sequence is its
+            // own probe: retried only while it fails before sending anything, which is exactly the
+            // window where the MP has not finished coming up yet.
+            job.Report($"Waiting for the MP at {endpoint} to accept the power-on sequence");
+            var sent = await SendUntilAcceptedAsync(
+                snapshot, machine, MpTasks.PowerOn, opts.PowerOnMpTimeoutSeconds, job, ct);
+
+            if (!sent.Success)
+                throw new InvalidOperationException(
+                    $"The power-on sequence failed: {sent.Error}. The outlet is on; check the MP by hand.");
+
+            job.Report($"Power-on sent. {type.DisplayName} cannot report power state, so it is unconfirmed.");
+            return;
+        }
 
         job.Report($"Waiting for the MP at {endpoint} to answer");
         var status = await WaitForMpAsync(snapshot, machine, endpoint, opts, job, ct);
@@ -175,12 +221,12 @@ public sealed class MachinePowerService(
         }
 
         job.Report("Sending the power-on sequence");
-        var result = await RunTaskAsync(snapshot, machine, "poweron", job, ct);
+        var result = await RunTaskAsync(snapshot, machine, MpTasks.PowerOn, job, ct);
         if (!result.Success)
             throw new InvalidOperationException($"The power-on sequence failed: {result.Error}");
 
         // Confirm rather than trust: several MPs accept the command and then refuse to act.
-        var confirm = await RunTaskAsync(snapshot, machine, "status", job, ct);
+        var confirm = await RunTaskAsync(snapshot, machine, MpTasks.Status, job, ct);
         job.Report(confirm.State == PowerState.On
             ? "Confirmed: the system is powered on"
             : $"Power-on sent, but the MP still reports {confirm.State}");
@@ -197,36 +243,39 @@ public sealed class MachinePowerService(
 
         if (machine.Mp is not null && !force)
         {
-            var status = await RunTaskAsync(snapshot, machine, "status", job, ct);
+            var type = snapshot.MpTypeFor(machine)
+                ?? throw new InvalidOperationException($"MP type '{machine.Mp.Type}' is not defined.");
 
-            if (!status.Success)
-                throw new InvalidOperationException(
-                    $"Could not read power state from {machine.Name}'s MP ({status.Error}). " +
-                    "The outlet has been left on; use Force Off to override.");
-
-            if (status.State == PowerState.On)
+            if (!type.CanPowerOff)
             {
-                job.Report("Sending the power-off sequence");
-                var result = await RunTaskAsync(snapshot, machine, "poweroff", job, ct);
-                if (!result.Success)
+                // There is no shutdown to ask for, so the outlet is the whole operation - the same
+                // thing this would do if the machine had no management processor at all. Warned
+                // about rather than refused: power is being taken from a system that was never told
+                // to stop, which is worth a line in the log even though it is what was asked for.
+                if (machine.Pdu is null)
                     throw new InvalidOperationException(
-                        $"The power-off sequence failed: {result.Error}. The outlet has been left on.");
+                        $"{type.DisplayName} has no power-off task and {machine.DisplayName} has no outlet, " +
+                        "so there is nothing to switch off.");
 
-                if (!await WaitForOffAsync(snapshot, machine, opts, job, ct))
-                    throw new TimeoutException(
-                        $"{machine.Name} did not confirm it was off within {opts.PowerOffConfirmTimeoutSeconds}s. " +
-                        "The outlet has been left on; use Force Off to override.");
+                job.Report($"{type.DisplayName} has no power-off task; switching the outlet off directly");
+                events.Warn("power",
+                    $"{machine.DisplayName}'s outlet was switched off without a shutdown: " +
+                    $"{type.DisplayName} has no power-off task.", machine.Id, job.Id);
+            }
+            else if (type.ReportsPowerState)
+            {
+                await AskAndConfirmOffAsync(snapshot, machine, type, opts, job, ct);
             }
             else
             {
-                job.Report($"The MP reports the system is already {status.State}");
+                await ShutDownUnconfirmedAsync(snapshot, machine, type, job, ct);
             }
         }
         else if (force && machine.Mp is not null)
         {
             job.Report("Forced: cutting the outlet without asking the MP");
             events.Warn("power",
-                $"Forced power off for {machine.Name}; the system was not confirmed shut down first.",
+                $"Forced power off for {machine.DisplayName}; the system was not confirmed shut down first.",
                 machine.Id, job.Id);
         }
 
@@ -241,15 +290,79 @@ public sealed class MachinePowerService(
         job.Report("Outlet switched off");
     }
 
+    /// <summary>
+    /// The full sequence, for an MP that can both shut the system down and say what state it is in:
+    /// ask, then watch until it agrees it is off. On timeout the outlet is left live - that is the
+    /// point of the whole design.
+    /// </summary>
+    private async Task AskAndConfirmOffAsync(
+        ConfigSnapshot snapshot, MachineConfig machine, MpTypeDefinition type,
+        OrchestrationConfig opts, Job job, CancellationToken ct)
+    {
+        var status = await RunTaskAsync(snapshot, machine, MpTasks.Status, job, ct);
+
+        if (!status.Success)
+            throw new InvalidOperationException(
+                $"Could not read power state from {machine.DisplayName}'s MP ({status.Error}). " +
+                "The outlet has been left on; use Force Off to override.");
+
+        if (status.State != PowerState.On)
+        {
+            job.Report($"The MP reports the system is already {status.State}");
+            return;
+        }
+
+        job.Report("Sending the power-off sequence");
+        var result = await RunTaskAsync(snapshot, machine, MpTasks.PowerOff, job, ct);
+        if (!result.Success)
+            throw new InvalidOperationException(
+                $"The power-off sequence failed: {result.Error}. The outlet has been left on.");
+
+        if (!await WaitForOffAsync(snapshot, machine, opts, job, ct))
+            throw new TimeoutException(
+                $"{machine.DisplayName} did not confirm it was off within {opts.PowerOffConfirmTimeoutSeconds}s. " +
+                "The outlet has been left on; use Force Off to override.");
+    }
+
+    /// <summary>
+    /// Shutting down an MP that cannot be asked how it is getting on. The command still goes out,
+    /// but nothing confirms it, so by default the outlet is left live and the job fails saying so -
+    /// the same answer a confirmation timeout gives, for the same reason. An mp-type that sets
+    /// blindShutdownSeconds trades that for a fixed wait, which is a decision recorded in the
+    /// hardware's own file and logged every time it is acted on.
+    /// </summary>
+    private async Task ShutDownUnconfirmedAsync(
+        ConfigSnapshot snapshot, MachineConfig machine, MpTypeDefinition type, Job job, CancellationToken ct)
+    {
+        job.Report("Sending the power-off sequence");
+        var result = await RunTaskAsync(snapshot, machine, MpTasks.PowerOff, job, ct);
+        if (!result.Success)
+            throw new InvalidOperationException(
+                $"The power-off sequence failed: {result.Error}. The outlet has been left on.");
+
+        if (type.BlindShutdownSeconds is not { } grace)
+            throw new InvalidOperationException(
+                $"{machine.DisplayName} was asked to shut down, but {type.DisplayName} cannot report power " +
+                "state, so nothing confirms it did. The outlet has been left on; use Force Off once " +
+                "it is down, or set blindShutdownSeconds on the mp-type to cut power after a fixed wait.");
+
+        job.Report($"Waiting {grace}s for {machine.DisplayName} to shut down; nothing here can confirm it");
+        await Task.Delay(TimeSpan.FromSeconds(grace), ct);
+
+        events.Warn("power",
+            $"Switching {machine.DisplayName}'s outlet off after {type.DisplayName}'s {grace}s blind shutdown " +
+            "window. The shutdown was never confirmed.", machine.Id, job.Id);
+    }
+
     private async Task ResetAsync(ConfigSnapshot snapshot, MachineConfig machine, Job job, CancellationToken ct)
     {
         if (machine.Mp is null)
             throw new InvalidOperationException(
-                $"{machine.Name} has no management processor, so it cannot be reset. " +
+                $"{machine.DisplayName} has no management processor, so it cannot be reset. " +
                 "Use an outlet power cycle instead.");
 
         job.Report("Sending the reset sequence");
-        var result = await RunTaskAsync(snapshot, machine, "reset", job, ct);
+        var result = await RunTaskAsync(snapshot, machine, MpTasks.Reset, job, ct);
         if (!result.Success) throw new InvalidOperationException($"The reset sequence failed: {result.Error}");
         job.Report("Reset sent");
     }
@@ -282,7 +395,7 @@ public sealed class MachinePowerService(
             first = false;
 
             var child = jobs.Enqueue(JobKind.MachinePower,
-                $"{(action == PowerAction.On ? "Power on" : "Power off")} {config.Current.Machine(machineId)!.Name}",
+                $"{(action == PowerAction.On ? "Power on" : "Power off")} {config.Current.Machine(machineId)!.DisplayName}",
                 machineId,
                 (job, innerCt) => RunMachinePowerAsync(machineId, action, force, job, innerCt),
                 machineId: machineId, forced: force, parentJobId: parent.Id);
@@ -320,11 +433,18 @@ public sealed class MachinePowerService(
     /// <summary>How many times to re-attempt a task that failed before issuing any command.</summary>
     private const int TransientRetries = 3;
 
+    /// <summary>
+    /// What to call a machine's mp-type in a message, when the message is reached before the type
+    /// itself has been resolved - a machine can name a type that no longer exists.
+    /// </summary>
+    private static string MpName(ConfigSnapshot snapshot, MachineConfig machine)
+        => snapshot.MpTypeFor(machine)?.DisplayName ?? "Its MP type";
+
     private async Task<MpResult> RunTaskAsync(
         ConfigSnapshot snapshot, MachineConfig machine, string task, Job job, CancellationToken ct)
     {
-        var type = snapshot.MpTypes.GetValueOrDefault(machine.Mp!.Type)
-            ?? throw new InvalidOperationException($"MP type '{machine.Mp.Type}' is not defined.");
+        var type = snapshot.MpTypeFor(machine)
+            ?? throw new InvalidOperationException($"MP type '{machine.Mp!.Type}' is not defined.");
 
         var driver = _drivers.FirstOrDefault(d => d.CanHandle(type))
             ?? throw new InvalidOperationException($"No driver can handle MP transport '{type.Transport}'.");
@@ -361,7 +481,7 @@ public sealed class MachinePowerService(
 
         while (true)
         {
-            result = await RunTaskAsync(snapshot, machine, "status", job, ct);
+            result = await RunTaskAsync(snapshot, machine, MpTasks.Status, job, ct);
             if (result.Success) return result;
 
             var remaining = deadline - DateTimeOffset.Now;
@@ -369,6 +489,34 @@ public sealed class MachinePowerService(
 
             if (++attempt % 3 == 0)
                 job.Report($"Still waiting for {endpoint} ({remaining.TotalSeconds:F0}s left)");
+
+            await Task.Delay(TimeSpan.FromSeconds(Math.Min(5, remaining.TotalSeconds)), ct);
+        }
+    }
+
+    /// <summary>
+    /// Keep offering a task to an MP that is still coming up, until it takes it or the deadline
+    /// passes. Only a transient result - one where nothing was sent - is retried, which is what
+    /// makes this safe to use with a power command rather than a status read: a sequence that got
+    /// part way through is never repeated.
+    /// </summary>
+    private async Task<MpResult> SendUntilAcceptedAsync(
+        ConfigSnapshot snapshot, MachineConfig machine, string task, int timeoutSeconds,
+        Job job, CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.Now + TimeSpan.FromSeconds(timeoutSeconds);
+        var attempt = 0;
+
+        while (true)
+        {
+            var result = await RunTaskAsync(snapshot, machine, task, job, ct);
+            if (result.Success || !result.Transient) return result;
+
+            var remaining = deadline - DateTimeOffset.Now;
+            if (remaining <= TimeSpan.Zero) return result;
+
+            if (++attempt % 3 == 0)
+                job.Report($"Still waiting for the MP ({remaining.TotalSeconds:F0}s left)");
 
             await Task.Delay(TimeSpan.FromSeconds(Math.Min(5, remaining.TotalSeconds)), ct);
         }
@@ -384,7 +532,7 @@ public sealed class MachinePowerService(
         {
             await Task.Delay(TimeSpan.FromSeconds(opts.PowerOffPollIntervalSeconds), ct);
 
-            var status = await RunTaskAsync(snapshot, machine, "status", job, ct);
+            var status = await RunTaskAsync(snapshot, machine, MpTasks.Status, job, ct);
             if (status.Success && status.State == PowerState.Off)
             {
                 job.Report("Confirmed: the system is powered off");

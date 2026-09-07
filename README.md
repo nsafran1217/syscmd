@@ -199,8 +199,26 @@ tasks:
         off: "/System Power[^:]*:\\s*off/i"
 ```
 
-Only `status` needs a `match`; it is what makes confirm-before-cut possible, so a machine without
-one can only be forced off.
+Only `status` needs a `match`; it is what makes confirm-before-cut possible.
+
+**Define the tasks this model actually has, and leave the rest out.** syscmd runs four —
+`poweron`, `poweroff`, `reset`, `status` — and plenty of service processors do not have all four.
+A missing task disables that operation and greys it out in the GUI rather than failing when
+somebody tries it. A task key written with nothing under it is reported as an error instead: that
+reads as an unfinished edit rather than a statement about the hardware.
+
+| Missing | What happens |
+| --- | --- |
+| `poweron` | Powering the machine on applies outlet power and stops there. |
+| `status` | The power-on sequence is retried until the MP accepts it, then reported as sent but unconfirmed — nothing can read the state back. |
+| `poweroff` | There is no shutdown to ask for, so powering the machine off switches its outlet off directly — the same as a machine with no MP. Warned about in the confirmation dialog and in the event log. |
+| `reset` | The reset action is unavailable. |
+
+An MP that can be told to shut down but never reports state is the one case with a choice to make.
+By default the command goes out, nothing confirms it, and the outlet is left on with the job
+failing — the same answer a confirmation timeout gives. Setting `blindShutdownSeconds: 120` on the
+mp-type trades that for a fixed wait before the cut. It is opt-in per hardware type and logged as a
+warning every time it is acted on, because nothing has confirmed the machine is down.
 
 ## Concurrency and the single-wire problem
 

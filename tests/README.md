@@ -48,8 +48,9 @@ minutes, because it waits out a real confirmation timeout.
 `console-smoke.mjs` covers the console window: that it opens at 80x24 or better and cannot be
 dragged below it, that the black-background override applies and toggles back, and that the Power
 menu offers on, off and reset through the management processor — asking before anything that takes
-power away, queueing nothing when cancelled, and greying out entirely on `pdp1134`, the simulated
-machine with no service processor. The size checks read xterm's own cols and rows rather than
+power away and queueing nothing when cancelled. On `pdp1134`, the simulated machine with an outlet
+and no service processor, it checks that on and off stay live through the outlet while reset greys
+out, and that the confirmation says the outlet is cut without a shutdown. The size checks read xterm's own cols and rows rather than
 measuring pixels, because that is the thing being promised.
 
 `theme-smoke.mjs` covers the palettes and backdrops. It is the only suite that checks colour, and
