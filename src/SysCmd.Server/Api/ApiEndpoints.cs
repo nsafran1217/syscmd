@@ -144,14 +144,14 @@ public static class ApiEndpoints
             var start = from ?? end.AddHours(-24);
             var samples = history.Read(start, end, pdu);
 
-            // Thin the series so a month of 15-second samples does not land on a chart untouched.
+            // Averaged into buckets so a year of 30-second readings does not land on a chart
+            // untouched - and so what is drawn is what the readings say, not whichever of them
+            // the arithmetic happened to land on. The cap is per PDU: each is its own line.
             var cap = Math.Clamp(maxPoints ?? 500, 10, 5000);
-            var step = Math.Max(1, samples.Count / cap);
 
-            return Results.Ok(samples
-                .Where((_, i) => i % step == 0)
+            return Results.Ok(PowerSeries.Downsample(samples, cap)
                 .Select(s => new PowerPointDto(s.Timestamp, s.PduId, s.Watts)));
-        });
+        }).WithSummary("Power readings over a window, averaged into at most maxPoints per PDU.");
     }
 
     private static void MapEvents(RouteGroupBuilder api) =>

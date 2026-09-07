@@ -253,7 +253,7 @@ GET  /api/v1/groups
 POST /api/v1/groups/{id}/power          {"action":"on|off"}
 GET  /api/v1/jobs[/{id}]                job status and progress
 GET  /api/v1/power/summary
-GET  /api/v1/power/history?from=&to=&pdu=&maxPoints=
+GET  /api/v1/power/history?from=&to=&pdu=&maxPoints=   # averaged into maxPoints buckets per PDU
 GET  /api/v1/events?limit=&level=&machine=
 GET/PUT/DELETE /api/v1/config/{app|machines|pdus|groups|console-servers}[/{id}]
 GET  /api/v1/config/types/{pdu|mp}      available driver definitions
