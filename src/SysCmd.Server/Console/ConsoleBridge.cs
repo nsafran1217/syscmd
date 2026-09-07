@@ -28,7 +28,7 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
         if (EndpointResolver.For(snapshot, machine, target) is not { } endpoint)
         {
             await CloseWithMessageAsync(socket,
-                $"{machine.Name} has no {(target == ConsoleTarget.Mp ? "management processor" : "serial console")} configured.", ct);
+                $"{machine.DisplayName} has no {(target == ConsoleTarget.Mp ? "management processor" : "serial console")} configured.", ct);
             return;
         }
 
@@ -37,7 +37,7 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
         {
             var exclusive = EndpointResolver.RequiresExclusiveSession(snapshot, machine, target);
             lease = await broker.AcquireAsync(
-                endpoint, $"console window ({machine.Name})", LeaseWait, ct, exclusive);
+                endpoint, $"console window ({machine.DisplayName})", LeaseWait, ct, exclusive);
         }
         catch (EndpointBusyException ex)
         {
@@ -59,8 +59,8 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
             }
 
             var label = target == ConsoleTarget.Mp ? "management processor" : "serial console";
-            events.Info("console", $"Console opened on {machine.Name} ({label}) at {endpoint}", machine.Id);
-            await SendTextAsync(socket, $"\x1b[33m*** Connected to {endpoint} - {machine.Name} {label} ***\x1b[0m\r\n", ct);
+            events.Info("console", $"Console opened on {machine.DisplayName} ({label}) at {endpoint}", machine.Id);
+            await SendTextAsync(socket, $"\x1b[33m*** Connected to {endpoint} - {machine.DisplayName} {label} ***\x1b[0m\r\n", ct);
 
             // Shared between the two pumps: the browser asks for a login on the control channel,
             // and the device-to-browser pump is what actually drives it.
@@ -93,7 +93,7 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    events.Warn("console", $"Console on {machine.Name} ended: {ex.Message}", machine.Id);
+                    events.Warn("console", $"Console on {machine.DisplayName} ended: {ex.Message}", machine.Id);
                 }
                 finally
                 {
@@ -101,7 +101,7 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
                 }
             }
 
-            events.Info("console", $"Console closed on {machine.Name} - {endedBy}", machine.Id);
+            events.Info("console", $"Console closed on {machine.DisplayName} - {endedBy}", machine.Id);
             await CloseAsync(socket, "session ended", ct);
         }
     }
@@ -149,7 +149,7 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
                     await SendTextAsync(socket, $"\r\n\x1b[33m*** {message} ***\x1b[0m\r\n", ct);
                     if (started)
                     {
-                        events.Info("console", $"Login sequence sent on {machine.Name}'s console", machine.Id);
+                        events.Info("console", $"Login sequence sent on {machine.DisplayName}'s console", machine.Id);
 
                         // Answer whatever is already on screen first. The login prompt has
                         // usually arrived long before the operator presses the button, and a
@@ -194,7 +194,7 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
             _assistant = LoginAssistant.TryCreate(snapshot, machine, _recent.ToString(), out var error);
             return _assistant is null
                 ? (false, error)
-                : (true, "Sending the configured login for " + machine.Name);
+                : (true, "Sending the configured login for " + machine.DisplayName);
         }
 
         /// <summary>Feed device output; returns anything the login wants transmitted.</summary>

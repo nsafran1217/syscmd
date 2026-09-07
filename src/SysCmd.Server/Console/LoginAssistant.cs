@@ -49,11 +49,11 @@ public sealed class LoginAssistant
 
         if (machine.Mp is not { } mp)
         {
-            error = $"{machine.Name} has no management processor configured.";
+            error = $"{machine.DisplayName} has no management processor configured.";
             return null;
         }
 
-        if (snapshot.MpTypes.GetValueOrDefault(mp.Type) is not { } type)
+        if (snapshot.MpTypeFor(mp) is not { } type)
         {
             error = $"MP type '{mp.Type}' is not defined.";
             return null;
@@ -61,7 +61,7 @@ public sealed class LoginAssistant
 
         if (type.Login.Count == 0)
         {
-            error = $"{type.Name} defines no login steps, so there is nothing to send.";
+            error = $"{type.DisplayName} defines no login steps, so there is nothing to send.";
             return null;
         }
 

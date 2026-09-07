@@ -78,7 +78,7 @@ public sealed class PduService(ConfigStore config, SnmpPduClient snmp, EventLog 
             rows.Add(new OutletStatus(pdu.Id, n, state)
             {
                 MachineId = machine?.Id,
-                MachineName = machine?.Name,
+                MachineName = machine?.DisplayName,
                 Watts = watts,
             });
         }
@@ -92,7 +92,7 @@ public sealed class PduService(ConfigStore config, SnmpPduClient snmp, EventLog 
             pduVolts = type.Power.NominalVolts;
         }
 
-        return new PduStatus(pdu.Id, pdu.Name, Reachable: true, rows)
+        return new PduStatus(pdu.Id, pdu.DisplayName, Reachable: true, rows)
         {
             Watts = pduWatts,
             Amps = pduAmps,
@@ -101,7 +101,7 @@ public sealed class PduService(ConfigStore config, SnmpPduClient snmp, EventLog 
     }
 
     private static PduStatus Unreachable(PduConfig pdu, string error) =>
-        new(pdu.Id, pdu.Name, Reachable: false,
+        new(pdu.Id, pdu.DisplayName, Reachable: false,
             [.. Enumerable.Range(1, Math.Max(pdu.OutletCount, 0))
                 .Select(n => new OutletStatus(pdu.Id, n, PowerState.Unknown))])
         { Error = error };
@@ -146,7 +146,7 @@ public sealed class PduService(ConfigStore config, SnmpPduClient snmp, EventLog 
         await snmp.SetIntAsync(pdu, type, oid, value, ct);
 
         _cache.TryRemove(pduId, out _);
-        events.Info("pdu", $"Set {pdu.Name} outlet {outlet} → {key}", snapshot.MachineOnOutlet(pduId, outlet)?.Id);
+        events.Info("pdu", $"Set {pdu.DisplayName} outlet {outlet} → {key}", snapshot.MachineOnOutlet(pduId, outlet)?.Id);
     }
 
     private static PowerState MapState(PduTypeDefinition type, int raw)

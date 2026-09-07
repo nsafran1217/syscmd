@@ -25,7 +25,7 @@ public sealed class GroupService(ConfigStore config, MachineService machines)
             var members = g.Machines.Select(byId.GetValueOrDefault).OfType<MachineStatus>().ToList();
             return new GroupStatus(
                 g.Id,
-                string.IsNullOrWhiteSpace(g.Name) ? g.Id : g.Name,
+                g.DisplayName,
                 members.Count,
                 members.Count(m => m.OutletState == PowerState.On))
             {

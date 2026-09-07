@@ -25,17 +25,17 @@ public static class EndpointResolver
 
         if (!string.IsNullOrWhiteSpace(mp.Host))
         {
-            var port = mp.Port ?? snapshot.MpTypes.GetValueOrDefault(mp.Type)?.DefaultPort ?? 23;
-            return new NetworkEndpoint(mp.Host, port, $"{machine.Name} management processor");
+            var port = mp.Port ?? snapshot.MpTypeFor(mp)?.DefaultPort ?? 23;
+            return new NetworkEndpoint(mp.Host, port, $"{machine.DisplayName} management processor");
         }
 
-        if (mp.Via is { } via) return ForSerial(snapshot, via, $"{machine.Name} management processor");
+        if (mp.Via is { } via) return ForSerial(snapshot, via, $"{machine.DisplayName} management processor");
         return null;
     }
 
     /// <summary>Where to connect to reach a machine's serial console.</summary>
     public static NetworkEndpoint? ForSerial(ConfigSnapshot snapshot, MachineConfig machine)
-        => machine.Serial is { } s ? ForSerial(snapshot, s, $"{machine.Name} serial console") : null;
+        => machine.Serial is { } s ? ForSerial(snapshot, s, $"{machine.DisplayName} serial console") : null;
 
     public static NetworkEndpoint? ForSerial(ConfigSnapshot snapshot, SerialPortBinding binding, string description)
     {
@@ -58,6 +58,6 @@ public static class EndpointResolver
         if (target == ConsoleTarget.Serial) return true;
         if (machine.Mp is not { } mp) return true;
         if (mp.Via is not null) return true;
-        return snapshot.MpTypes.GetValueOrDefault(mp.Type) is not { AllowsConcurrentSessions: true };
+        return snapshot.MpTypeFor(mp) is not { AllowsConcurrentSessions: true };
     }
 }
