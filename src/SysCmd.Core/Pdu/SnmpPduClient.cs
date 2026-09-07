@@ -13,6 +13,27 @@ public sealed class SnmpPduClient
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Bound an SNMP operation by cancelling it rather than by abandoning it. SharpSnmpLib waits on
+    /// its own UDP socket with no timeout of its own, so giving up with Task.WaitAsync leaves that
+    /// socket open and the operation pending for the life of the process - which is the state a PDU
+    /// on a switched-off breaker leaves behind every single poll, and it accumulates.
+    /// </summary>
+    private static CancellationTokenSource Deadline(CancellationToken ct)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(Timeout);
+        return cts;
+    }
+
+    /// <summary>
+    /// Our own deadline elapsing is a timeout, not a cancellation, and reads better as one in the
+    /// "unreachable" line the GUI shows. A cancel that came from the caller is passed through.
+    /// Fully qualified: SharpSnmpLib has a TimeoutException of its own, which this is not.
+    /// </summary>
+    private static System.TimeoutException Timedout(PduConfig pdu)
+        => new($"{pdu.Host}:{pdu.Port} did not answer within {Timeout.TotalSeconds:F0}s.");
+
     /// <summary>Substitute the outlet number into a template OID from a pdu-type definition.</summary>
     public static string ResolveOid(string template, int outlet)
         => template.Replace("{outlet}", outlet.ToString(), StringComparison.Ordinal);
@@ -42,11 +63,20 @@ public sealed class SnmpPduClient
 
         var variables = list.Select(o => new Variable(new ObjectIdentifier(o))).ToList();
 
-        var result = await Messenger.GetAsync(
-            Version(pdu, type),
-            Endpoint(pdu),
-            new OctetString(pdu.Community.Read),
-            variables).WaitAsync(Timeout, ct);
+        IList<Variable> result;
+        using (var cts = Deadline(ct))
+        {
+            try
+            {
+                result = await Messenger.GetAsync(
+                    Version(pdu, type),
+                    Endpoint(pdu),
+                    new OctetString(pdu.Community.Read),
+                    variables,
+                    cts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw Timedout(pdu); }
+        }
 
         var map = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var v in result)
@@ -61,11 +91,20 @@ public sealed class SnmpPduClient
     public async Task<string?> GetStringAsync(
         PduConfig pdu, PduTypeDefinition type, string oid, CancellationToken ct)
     {
-        var result = await Messenger.GetAsync(
-            Version(pdu, type),
-            Endpoint(pdu),
-            new OctetString(pdu.Community.Read),
-            [new Variable(new ObjectIdentifier(oid))]).WaitAsync(Timeout, ct);
+        IList<Variable> result;
+        using (var cts = Deadline(ct))
+        {
+            try
+            {
+                result = await Messenger.GetAsync(
+                    Version(pdu, type),
+                    Endpoint(pdu),
+                    new OctetString(pdu.Community.Read),
+                    [new Variable(new ObjectIdentifier(oid))],
+                    cts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw Timedout(pdu); }
+        }
 
         var data = result.FirstOrDefault()?.Data;
         if (data is null || data.TypeCode is SnmpType.NoSuchInstance or SnmpType.NoSuchObject or SnmpType.Null)
@@ -77,11 +116,17 @@ public sealed class SnmpPduClient
     public async Task SetIntAsync(
         PduConfig pdu, PduTypeDefinition type, string oid, int value, CancellationToken ct)
     {
-        await Messenger.SetAsync(
-            Version(pdu, type),
-            Endpoint(pdu),
-            new OctetString(pdu.Community.Write),
-            [new Variable(new ObjectIdentifier(oid), new Integer32(value))]).WaitAsync(Timeout, ct);
+        using var cts = Deadline(ct);
+        try
+        {
+            await Messenger.SetAsync(
+                Version(pdu, type),
+                Endpoint(pdu),
+                new OctetString(pdu.Community.Write),
+                [new Variable(new ObjectIdentifier(oid), new Integer32(value))],
+                cts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw Timedout(pdu); }
     }
 
     /// <summary>PDUs return their readings as Integer32, Gauge32, Counter32 or TimeTicks depending on the model.</summary>
