@@ -181,6 +181,12 @@
                 PowerOffConfirmTimeoutSeconds = current.Orchestration.PowerOffConfirmTimeoutSeconds,
                 PowerOffPollIntervalSeconds = current.Orchestration.PowerOffPollIntervalSeconds,
             },
+            // Set on the Console Logs page, and carried across for the same reason.
+            ConsoleLogs = new ConsoleLogConfig
+            {
+                Enabled = current.ConsoleLogs.Enabled,
+                RetentionDays = current.ConsoleLogs.RetentionDays,
+            },
         };
         _saved = null;
     }

@@ -46,9 +46,12 @@ overrides and is logged, and that killing a job leaves untouched outlets alone. 
 minutes, because it waits out a real confirmation timeout.
 
 `console-smoke.mjs` covers the console window: that it opens at 80x24 or better and cannot be
-dragged below it, that the black-background override applies and toggles back, and that the Power
+dragged below it, that the black-background override applies, comes back on the next console after a reload
+because it is saved per browser, and toggles back, and that the Power
 menu offers on, off and reset through the management processor — asking before anything that takes
-power away and queueing nothing when cancelled. On `pdp1134`, the simulated machine with an outlet
+power away and queueing nothing when cancelled. The message saying a job was queued has to clear itself after about
+30 seconds rather than stay for the life of the window. Power off on a machine with an MP has to shut
+the system down and leave its outlet on. On `pdp1134`, the simulated machine with an outlet
 and no service processor, it checks that on and off stay live through the outlet while reset greys
 out, and that the confirmation says the outlet is cut without a shutdown. The size checks read xterm's own cols and rows rather than
 measuring pixels, because that is the thing being promised.
@@ -67,6 +70,14 @@ invisible.
 the two readings agree, that watts are used verbatim rather than scaled by voltage, and that
 energy keeps accruing. It needs no browser.
 
+`console-log-smoke.mjs` covers console logging: that each console session starts a log of its own,
+that the file holds what the device sent as plain text with the escape sequences gone and says why
+the session ended, that the log page lists, shows and downloads it, that a download cannot reach
+outside the log directory, that retention removes a log older than the setting and keeps recent
+ones, and that turning recording off stops new logs. Saving from the page rewrites
+`config.sim/app.yaml` without its comments, so the suite puts the file back when it finishes; it
+also plants an old log under `data.sim/`, so run it from the same checkout as the server.
+
 They are plain scripts rather than a test project, so they need nothing but Node and Playwright's
 Chromium. The `install-deps` step is not required on Ubuntu 24.04.
 
@@ -83,6 +94,7 @@ SHOTS=./shots node tests/window-rollup-smoke.mjs  # roll up, restore and resize 
 node tests/power-smoke.mjs                    # watts vs current readings and energy accrual
 SHOTS=./shots node tests/theme-smoke.mjs      # CDE palettes, backdrops and the Motif colour maths
 SHOTS=./shots node tests/console-smoke.mjs    # console size floor, black background, power menu
+SHOTS=./shots node tests/console-log-smoke.mjs    # console logs: recording, the page, retention
 SHOTS=./shots node tests/config-edit-smoke.mjs    # machine editor: credentials and DNS lookup
 SHOTS=./shots node tests/dashboard-smoke.mjs      # outlet filter, outlet-only power-on, machine controls
 SHOTS=./shots node tests/log-column-smoke.mjs      # the event log lines up and scrolls with the other windows

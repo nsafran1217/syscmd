@@ -23,11 +23,20 @@ public sealed class MachinePowerService(
 
     // ------------------------------------------------------------- enqueueing
 
-    /// <summary>Queue a power operation for a machine. Returns immediately with a job to watch.</summary>
-    public Job EnqueueMachinePower(string machineId, PowerAction action, bool force)
+    /// <summary>
+    /// Queue a power operation for a machine. Returns immediately with a job to watch.
+    /// <paramref name="offMode"/> only matters to an unforced power off; see <see cref="PowerOffMode"/>.
+    /// </summary>
+    public Job EnqueueMachinePower(string machineId, PowerAction action, bool force,
+        PowerOffMode offMode = PowerOffMode.SystemAndOutlet)
     {
         var machine = config.Current.Machine(machineId)
             ?? throw new InvalidOperationException($"Unknown machine '{machineId}'.");
+
+        // A power off that stops at the system and leaves the outlet alone. Only meaningful with a
+        // management processor to do the stopping; a machine without one has only its outlet.
+        var keepOutlet = action == PowerAction.Off && offMode == PowerOffMode.SystemOnly
+                         && !force && machine.Mp is not null;
 
         // Refused here rather than inside the job, so a caller is told immediately instead of
         // watching a queued job fail a second later for a reason the configuration already knew.
@@ -38,6 +47,12 @@ public sealed class MachinePowerService(
             case PowerAction.On when !caps.CanPowerOn:
                 throw new InvalidOperationException(
                     $"{machine.DisplayName} has no outlet and no management processor that can start it.");
+
+            case PowerAction.Off when keepOutlet && !caps.MpPowerOff:
+                throw new InvalidOperationException(
+                    $"{MpName(config.Current, machine)} has no power-off task, so there is nothing to ask " +
+                    $"{machine.DisplayName}'s management processor to do, and this leaves the outlet alone. " +
+                    "Switch the outlet off from the machine list instead.");
 
             case PowerAction.Off when !caps.CanPowerOff:
                 throw new InvalidOperationException(
@@ -57,11 +72,11 @@ public sealed class MachinePowerService(
             PowerAction.Off => "Power off",
             _ => "Reset",
         };
-        var title = $"{verb} {machine.DisplayName}{(force ? " (forced)" : "")}";
+        var title = $"{verb} {machine.DisplayName}{(force ? " (forced)" : keepOutlet ? " (outlet stays on)" : "")}";
         var target = machine.Pdu is { } b ? $"{b.Id}:{b.Outlet}" : machine.Id;
 
         return jobs.Enqueue(JobKind.MachinePower, title, target,
-            (job, ct) => RunMachinePowerAsync(machineId, action, force, job, ct),
+            (job, ct) => RunMachinePowerAsync(machineId, action, force, job, ct, keepOutlet),
             machineId: machineId, forced: force);
     }
 
@@ -119,7 +134,7 @@ public sealed class MachinePowerService(
     // ------------------------------------------------------------- machine run
 
     private async Task RunMachinePowerAsync(
-        string machineId, PowerAction action, bool force, Job job, CancellationToken ct)
+        string machineId, PowerAction action, bool force, Job job, CancellationToken ct, bool keepOutlet = false)
     {
         using var _ = await locks.AcquireAsync(machineId, ct);
 
@@ -130,7 +145,7 @@ public sealed class MachinePowerService(
         switch (action)
         {
             case PowerAction.On: await PowerOnAsync(snapshot, machine, force, job, ct); break;
-            case PowerAction.Off: await PowerOffAsync(snapshot, machine, force, job, ct); break;
+            case PowerAction.Off: await PowerOffAsync(snapshot, machine, force, keepOutlet, job, ct); break;
             case PowerAction.Reset: await ResetAsync(snapshot, machine, job, ct); break;
             default: throw new ArgumentOutOfRangeException(nameof(action));
         }
@@ -233,13 +248,81 @@ public sealed class MachinePowerService(
     }
 
     /// <summary>
+    /// Shut the system down through its management processor and stop there, leaving the outlet on
+    /// so the MP stays reachable to bring the machine back up (<see cref="PowerOffMode.SystemOnly"/>).
+    /// Nothing is cut, so nothing needs guarding; the MP is only watched where it can say how the
+    /// shutdown went, so the job can report it.
+    /// </summary>
+    private async Task ShutDownSystemAsync(
+        ConfigSnapshot snapshot, MachineConfig machine, OrchestrationConfig opts, Job job, CancellationToken ct)
+    {
+        var type = snapshot.MpTypeFor(machine)
+            ?? throw new InvalidOperationException($"MP type '{machine.Mp!.Type}' is not defined.");
+
+        // Refused when the job was queued, but the mp-type can change before it runs.
+        if (!type.CanPowerOff)
+            throw new InvalidOperationException(
+                $"{type.DisplayName} has no power-off task, so there is nothing to send. The outlet has been left on.");
+
+        if (type.ReportsPowerState)
+        {
+            // A status read that fails is no reason to stop: nothing is being cut, and the
+            // power-off sequence is what was asked for.
+            var status = await RunTaskAsync(snapshot, machine, MpTasks.Status, job, ct);
+            if (status.Success && status.State == PowerState.Off)
+            {
+                job.Report("The MP reports the system is already off; the outlet has been left on");
+                return;
+            }
+        }
+
+        job.Report("Sending the power-off sequence");
+        var result = await RunTaskAsync(snapshot, machine, MpTasks.PowerOff, job, ct);
+        if (!result.Success)
+            throw new InvalidOperationException(
+                $"The power-off sequence failed: {result.Error}. The outlet has been left on.");
+
+        if (!type.ReportsPowerState)
+        {
+            job.Report($"Power-off sent. {type.DisplayName} cannot report power state, so it is " +
+                       "unconfirmed; the outlet has been left on");
+            return;
+        }
+
+        if (!await WaitForOffAsync(snapshot, machine, opts, job, ct))
+            throw new TimeoutException(
+                $"{machine.DisplayName} did not confirm it was off within {opts.PowerOffConfirmTimeoutSeconds}s. " +
+                "The outlet has been left on.");
+
+        job.Report("The outlet has been left on");
+    }
+
+    /// <summary>
     /// Ask the machine to shut down, wait for its MP to confirm it really is off, and only then
     /// cut the outlet. On timeout the job fails with the outlet still live — that is the point.
+    /// With <paramref name="keepOutlet"/> set it stops once the system is down instead; see
+    /// <see cref="ShutDownSystemAsync"/>.
     /// </summary>
     private async Task PowerOffAsync(
-        ConfigSnapshot snapshot, MachineConfig machine, bool force, Job job, CancellationToken ct)
+        ConfigSnapshot snapshot, MachineConfig machine, bool force, bool keepOutlet, Job job, CancellationToken ct)
     {
         var opts = snapshot.App.Orchestration;
+
+        // An outlet that is already off has nothing running behind it to shut down, and the MP on
+        // it is dark too - asking it anyway can only fail, and would fail saying the outlet had
+        // been left on when it was never on. Only a firm reading counts: an outlet that cannot be
+        // read goes through the whole sequence, which is the safe direction to be wrong in.
+        if (machine.Pdu is { } dark && await TryReadOutletAsync(dark, ct) == PowerState.Off)
+        {
+            job.Report($"Outlet {dark.Outlet} is already off; nothing is running to shut down");
+            return;
+        }
+
+        if (keepOutlet)
+        {
+            await ShutDownSystemAsync(snapshot, machine, opts, job, ct);
+            return;
+        }
 
         if (machine.Mp is not null && !force)
         {
@@ -439,6 +522,16 @@ public sealed class MachinePowerService(
     /// </summary>
     private static string MpName(ConfigSnapshot snapshot, MachineConfig machine)
         => snapshot.MpTypeFor(machine)?.DisplayName ?? "Its MP type";
+
+    /// <summary>
+    /// An outlet's state, or Unknown when the PDU will not say. Used where a reading only saves
+    /// work: failing to get one is a reason to carry on the long way, never to fail the job.
+    /// </summary>
+    private async Task<PowerState> TryReadOutletAsync(MachinePduBinding bind, CancellationToken ct)
+    {
+        try { return await pdus.ReadOutletAsync(bind.Id, bind.Outlet, ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return PowerState.Unknown; }
+    }
 
     private async Task<MpResult> RunTaskAsync(
         ConfigSnapshot snapshot, MachineConfig machine, string task, Job job, CancellationToken ct)

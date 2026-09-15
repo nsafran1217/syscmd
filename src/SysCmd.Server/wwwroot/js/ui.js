@@ -57,6 +57,12 @@ window.syscmdUi = {
         link.setAttribute('href', href);
     },
 
+    // Scrolls a box to its end: the console log viewer opens on the latest output.
+    scrollToBottom: function (id) {
+        const el = document.getElementById(id);
+        if (el) el.scrollTop = el.scrollHeight;
+    },
+
     isWideViewport: function () {
         return window.matchMedia('(min-width: 900px)').matches;
     },

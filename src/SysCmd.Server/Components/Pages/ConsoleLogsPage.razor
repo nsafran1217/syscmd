@@ -1,0 +1,274 @@
+@page "/console-logs"
+@inherits LivePage
+
+@inject ConsoleLogStore Logs
+@inject ConfigStore Config
+@inject EventLog Events
+@inject IJSRuntime JS
+
+<PageTitle>Console Logs</PageTitle>
+
+<CdeWindow Title="Console Logs">
+    <div class="spread" style="margin-bottom:10px;">
+        <h1 style="margin:0; font-size:20px;">Console Logs</h1>
+        <div class="btn-row">
+            <select @bind="_machine" @bind:after="RefreshNowAsync" aria-label="Machine">
+                <option value="">All machines</option>
+                @foreach (var id in _all.Select(f => f.MachineId).Distinct().OrderBy(MachineName))
+                {
+                    <option value="@id">@MachineName(id)</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <p class="muted" style="font-size:12px;">
+        Each console session is written to its own file under
+        <span class="mono">data/console-logs/&lt;machine&gt;/</span>, from the moment it connects until
+        it closes, with the terminal's control sequences stripped so it reads as plain text.
+        @_all.Count @(_all.Count == 1 ? "log" : "logs"), @Size(_all.Sum(f => f.Bytes)) in all.
+    </p>
+
+    @if (_files.Count == 0)
+    {
+        <p class="muted">
+            No console logs@(string.IsNullOrEmpty(_machine) ? "" : " for this machine") yet.
+            @if (!Config.Current.App.ConsoleLogs.Enabled)
+            {
+                <span>Recording is turned off below.</span>
+            }
+        </p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="cde-table">
+                <thead>
+                    <tr>
+                        <th>Machine</th>
+                        <th>Console</th>
+                        <th>Opened</th>
+                        <th>Last written</th>
+                        <th>Size</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var file in _files)
+                    {
+                        <tr class="@(IsSelected(file) ? "selected" : "")">
+                            <td>@MachineName(file.MachineId)</td>
+                            <td>
+                                @(file.Target == ConsoleTarget.Mp ? "MP" : "Serial")
+                                @if (file.Active)
+                                {
+                                    <span class="badge" title="The console is still open, so this log is still growing">open</span>
+                                }
+                            </td>
+                            <td class="mono">@file.Started.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td class="mono">@file.LastWritten.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td>@Size(file.Bytes)</td>
+                            <td>
+                                <div class="btn-row nowrap">
+                                    <button type="button" class="cde-btn small" @onclick="() => ViewAsync(file)">View</button>
+                                    <a class="cde-btn small" href="@DownloadUrl(file)" download="@DownloadName(file)">Download</a>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</CdeWindow>
+
+@if (_selected is { } selected)
+{
+    <CdeWindow Title="@($"Console Log - {MachineName(selected.MachineId)}, {selected.Started:yyyy-MM-dd HH:mm:ss}")">
+        <div class="spread" style="margin-bottom:8px;">
+            <span class="muted" style="font-size:12px;">
+                <span class="mono">@selected.Name</span>,
+                @if (_truncated)
+                {
+                    <text>showing the last @Size(TailBytes) of @Size(selected.Bytes). Download it for the whole session.</text>
+                }
+                else
+                {
+                    <text>@Size(selected.Bytes).</text>
+                }
+                @if (selected.Active)
+                {
+                    <text> The console is still open, so this follows it.</text>
+                }
+            </span>
+            <div class="btn-row">
+                <a class="cde-btn small" href="@DownloadUrl(selected)" download="@DownloadName(selected)">Download</a>
+                <button type="button" class="cde-btn small" @onclick="CloseViewer">Close</button>
+            </div>
+        </div>
+        <pre class="log-view" id="console-log-view">@_text</pre>
+    </CdeWindow>
+}
+
+<CdeWindow Title="Console Logs - Retention">
+    <div class="inline-toggle" style="margin-bottom:12px;">
+        <input type="checkbox" id="console-log-enabled" @bind="_enabled" />
+        <label for="console-log-enabled" style="display:inline; margin:0;">Record console sessions</label>
+    </div>
+
+    <label style="max-width:260px;">
+        <span>Keep logs for (days)</span>
+        <input type="number" min="0" id="console-log-days" @bind="_retentionDays" />
+    </label>
+
+    <p class="muted" style="font-size:11px; margin:0 0 12px;">
+        A log is removed once it has gone this many days without being written to; 0 keeps every
+        log. Old logs are cleared hourly and whenever this is saved. Stored in
+        <span class="mono">app.yaml</span>.
+    </p>
+
+    <div class="btn-row">
+        <button type="button" class="cde-btn" @onclick="SaveAsync">Save settings</button>
+        @if (_saved is { } msg)
+        {
+            <span class="muted">@msg</span>
+        }
+    </div>
+</CdeWindow>
+
+@code {
+    /// <summary>
+    /// How much of a log the viewer shows. The page lives in a server-side circuit, and a console
+    /// left open for a week is not something to push through it whole; the download is the whole
+    /// file.
+    /// </summary>
+    private const int TailBytes = 256 * 1024;
+
+    private IReadOnlyList<ConsoleLogFile> _all = [];
+    private IReadOnlyList<ConsoleLogFile> _files = [];
+    private string _machine = "";
+
+    private ConsoleLogFile? _selected;
+    private string _text = "";
+    private bool _truncated;
+    private bool _scrollToEnd;
+
+    private bool _enabled;
+    private int _retentionDays;
+    private string? _saved;
+
+    protected override TimeSpan RefreshInterval => TimeSpan.FromSeconds(5);
+
+    protected override void OnInitialized()
+    {
+        var settings = Config.Current.App.ConsoleLogs;
+        _enabled = settings.Enabled;
+        _retentionDays = settings.RetentionDays;
+    }
+
+    protected override Task LoadAsync(CancellationToken ct)
+    {
+        _all = Logs.List();
+        _files = string.IsNullOrEmpty(_machine) ? _all : [.. _all.Where(f => f.MachineId == _machine)];
+
+        // The viewer follows its file across refreshes: an open session keeps growing, and
+        // retention can take a log away altogether.
+        if (_selected is { } selected)
+        {
+            if (_all.FirstOrDefault(f => Same(f, selected)) is not { } current) CloseViewer();
+            else if (current.Bytes != selected.Bytes) Read(current);
+            else _selected = current;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_scrollToEnd) return;
+        _scrollToEnd = false;
+
+        try { await JS.InvokeVoidAsync("syscmdUi.scrollToBottom", "console-log-view"); }
+        catch (JSDisconnectedException) { /* the browser went away */ }
+    }
+
+    /// <summary>
+    /// Opening a log lands at its end, where the latest output is. Refreshes after that leave the
+    /// scroll position alone, so reading back through a live session is not yanked away.
+    /// </summary>
+    private Task ViewAsync(ConsoleLogFile file)
+    {
+        Read(file);
+        _scrollToEnd = true;
+        return Task.CompletedTask;
+    }
+
+    private void Read(ConsoleLogFile file)
+    {
+        _selected = file;
+        _text = Logs.ReadTail(file.MachineId, file.Name, TailBytes, out _truncated) ?? "";
+    }
+
+    private void CloseViewer()
+    {
+        _selected = null;
+        _text = "";
+        _truncated = false;
+    }
+
+    private Task SaveAsync()
+    {
+        if (_retentionDays < 0)
+        {
+            _saved = "Days cannot be negative; use 0 to keep every log.";
+            return Task.CompletedTask;
+        }
+
+        var current = Config.Current.App;
+        var app = new AppConfig
+        {
+            Site = current.Site,
+            Power = current.Power,
+            Orchestration = current.Orchestration,
+            ConsoleLogs = new ConsoleLogConfig { Enabled = _enabled, RetentionDays = _retentionDays },
+        };
+
+        try
+        {
+            Config.SaveApp(app);
+            Events.Info("config", !_enabled
+                ? "Console logging turned off"
+                : _retentionDays == 0
+                    ? "Console logging on, keeping every log"
+                    : $"Console logging on, keeping logs for {_retentionDays} days");
+
+            var removed = Logs.Prune();
+            _saved = $"Saved at {DateTime.Now:HH:mm:ss}" +
+                     (removed > 0 ? $"; removed {removed} old {(removed == 1 ? "log" : "logs")}." : ".");
+        }
+        catch (Exception ex)
+        {
+            _saved = $"Could not save: {ex.Message}";
+        }
+
+        return RefreshNowAsync();
+    }
+
+    private string MachineName(string id) => Config.Current.Machine(id)?.DisplayName ?? id;
+
+    private bool IsSelected(ConsoleLogFile file) => _selected is { } selected && Same(selected, file);
+
+    private static bool Same(ConsoleLogFile a, ConsoleLogFile b) => a.MachineId == b.MachineId && a.Name == b.Name;
+
+    private static string DownloadUrl(ConsoleLogFile file) =>
+        $"api/v1/console-logs/{Uri.EscapeDataString(file.MachineId)}/{Uri.EscapeDataString(file.Name)}";
+
+    private static string DownloadName(ConsoleLogFile file) => $"{file.MachineId}_{file.Name}";
+
+    // Not a switch expression: an arm starting "< 1024" at the head of a line is read by Razor as
+    // the start of a markup tag.
+    private static string Size(long bytes) =>
+        bytes < 1024 ? $"{bytes} B"
+        : bytes < 1024 * 1024 ? $"{bytes / 1024.0:F1} KB"
+        : $"{bytes / (1024.0 * 1024.0):F1} MB";
+}

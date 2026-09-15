@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using SysCmd.Core.Configuration;
+using SysCmd.Core.Consoles;
 using SysCmd.Core.Events;
 using SysCmd.Core.Jobs;
 using SysCmd.Core.Machines;
@@ -25,6 +26,12 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton(sp => new EventLog(dataRoot,
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<EventLog>>()));
+
+        services.AddSingleton(sp => new ConsoleLogStore(dataRoot,
+            sp.GetRequiredService<ConfigStore>(),
+            sp.GetRequiredService<EventLog>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<ConsoleLogStore>>()));
+        services.AddHostedService<ConsoleLogPruner>();
 
         services.AddSingleton<SnmpPduClient>();
         services.AddSingleton<PduService>();

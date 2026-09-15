@@ -255,6 +255,8 @@ GET  /api/v1/jobs[/{id}]                job status and progress
 GET  /api/v1/power/summary
 GET  /api/v1/power/history?from=&to=&pdu=&maxPoints=   # averaged into maxPoints buckets per PDU
 GET  /api/v1/events?limit=&level=&machine=
+GET  /api/v1/console-logs?machine=      recorded console sessions, newest first
+GET  /api/v1/console-logs/{machine}/{name}   one session's log as a text download
 GET/PUT/DELETE /api/v1/config/{app|machines|pdus|groups|console-servers}[/{id}]
 GET  /api/v1/config/types/{pdu|mp}      available driver definitions
 WS   /ws/console/{machineId}?target=mp|serial
@@ -275,6 +277,8 @@ curl -X POST localhost:5080/api/v1/machines/rp3440/power \
 ```
 data/power/YYYY-MM.csv        timestamp,pduId,watts,amps,volts
 data/events/YYYY-MM-DD.jsonl  one event per line
+data/console-logs/<machine>/YYYY-MM-DD_HH-MM-SS_{mp,serial}.log
+                              one console session per file, as plain text
 ```
 
 Energy is the trapezoidal integral of the wattage samples, skipping gaps longer than ten minutes
@@ -361,16 +365,35 @@ numbers, since how many pixels 80 columns takes depends on which font actually r
 **Options > Black background** overrides the palette for one console. It is deliberately a fixed
 scheme rather than a derived one: the point of asking for it is to stop the terminal following the
 theme, and half the shipped palettes put black text on a light colour set, which would be
-unreadable on black. The choice is per window and survives navigating away, not a reload — the
-same lifetime as the window's geometry.
+unreadable on black. The choice is saved per browser, in local storage: a console opens the way
+the last one was left, including after a reload. Once open, each window keeps its own setting, so
+toggling one console does not repaint the others.
 
-**Power** on the console's menu bar runs power actions through the machine's management processor:
-on, off, and reset. It calls the same `MachinePowerService` the dashboard does, so the
-shutdown-confirmation guarantee holds — switching a machine off asks its MP first and leaves the
-outlet on if it never confirms. The console is a view of the machine, not a way around its rules.
-Off and reset ask before acting; powering on does not, matching the dashboard. Every entry greys
-out on a machine with no management processor, which the simulated lab has one of (`pdp1134`,
-reached only over the terminal server).
+**Power** on the console's menu bar offers on, off and reset, reading `MachineCapabilities` as the
+machine list does and calling the same `MachinePowerService`. The MP is only asked to do what its
+mp-type defines. On switches the outlet on if it is off, then sends `poweron` if there is one.
+Off is where the console differs from the machine list: on a machine with a management processor
+it shuts the *system* down through the MP and leaves the outlet on, so the MP stays reachable to
+bring it back up. It waits for the MP to confirm where the MP can say, to report how it went. An
+mp-type with no `poweroff` task greys Off out, since there is nothing to send and the outlet is
+not the console's to cut; the machine list's Off is the one that switches outlets. A machine
+with no MP has only its outlet, which Off switches off, as the confirmation says. Reset needs the
+MP's task, so it greys out on `pdp1134`, the simulated machine reached only over the terminal
+server. Off and reset ask before
+acting; powering on does not, matching the dashboard. Powering off a machine whose outlet is
+already off finishes straight away: nothing behind it is running, and its MP has no power to
+answer. Queueing a job says so on the line under the terminal, which clears itself after about 30
+seconds, as every message there does; a newer one replaces it sooner.
+
+**Console logs.** Every session is written to
+`data/console-logs/<machine>/YYYY-MM-DD_HH-MM-SS_{mp,serial}.log`. A new file is started each time
+a console connects, and it closes with a line saying which side hung up. The device's output is
+written as plain text: escape sequences are dropped, line endings become newlines, and a
+backspace takes back the character before it. The **Console Logs** page lists the sessions, shows
+the end of one in the page (the last 256 KB, following it while the console is still open), and
+downloads the whole file. It also holds the settings, stored under `consoleLogs:` in `app.yaml`:
+recording on or off, and how many days a log is kept after it was last written. A log still
+being written is never removed.
 
 Consoles open as real windows on the page, in a floating layer above it. They drag by the title
 bar and resize from any of the eight frame pieces, both handled in JavaScript so a pointer move

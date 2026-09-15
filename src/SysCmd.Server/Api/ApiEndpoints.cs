@@ -1,4 +1,5 @@
 using SysCmd.Core.Configuration;
+using SysCmd.Core.Consoles;
 using SysCmd.Core.Events;
 using SysCmd.Core.Jobs;
 using SysCmd.Core.Machines;
@@ -25,6 +26,7 @@ public static class ApiEndpoints
         MapJobs(api);
         MapPower(api);
         MapEvents(api);
+        MapConsoleLogs(api);
         MapConfig(api);
     }
 
@@ -160,6 +162,22 @@ public static class ApiEndpoints
             EventLevel? min = Enum.TryParse<EventLevel>(level, ignoreCase: true, out var parsed) ? parsed : null;
             return Results.Ok(log.Recent(limit ?? 200, min, machine).Select(e => e.ToDto()));
         });
+
+    private static void MapConsoleLogs(RouteGroupBuilder api)
+    {
+        var logs = api.MapGroup("/console-logs");
+
+        logs.MapGet("/", (ConsoleLogStore store, string? machine) =>
+                Results.Ok(store.List().Where(f =>
+                    machine is null || f.MachineId.Equals(machine, StringComparison.OrdinalIgnoreCase))))
+            .WithSummary("Recorded console sessions, newest first.");
+
+        logs.MapGet("/{machineId}/{name}", (string machineId, string name, ConsoleLogStore store) =>
+                store.PathOf(machineId, name) is { } path
+                    ? Results.File(path, "text/plain; charset=utf-8", $"{machineId}_{name}")
+                    : Results.NotFound())
+            .WithSummary("One console session's log, as a plain-text download.");
+    }
 
     private static void MapConfig(RouteGroupBuilder api)
     {

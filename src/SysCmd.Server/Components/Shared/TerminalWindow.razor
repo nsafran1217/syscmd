@@ -61,6 +61,13 @@
 
     private PendingPower? _confirm;
 
+    /// <summary>
+    /// Where this browser keeps its black-background choice. Local storage rather than the cookies
+    /// the theme rides in: the terminal is built in the browser after the first paint whatever
+    /// happens, so there is no server-rendered frame for a cookie to get right first.
+    /// </summary>
+    private const string BlackSetting = "syscmd.consoleBlack";
+
     private DotNetObjectReference<TerminalWindow>? _self;
     private IReadOnlyList<CdeMenu> _menus = [];
     private CdeMenu? _help;
@@ -79,10 +86,11 @@
     }
 
     /// <summary>
-    /// What this window's machine can be asked to do. The same answer the machine list greys its
-    /// buttons out from, so the Power menu here offers exactly what that page offers - including
-    /// on and off for a machine with no service processor but an outlet, which is most of what a
-    /// terminal-server-only machine is.
+    /// What this window's machine can be asked to do: the same answer the machine list greys its
+    /// buttons out from, read for a console. On and reset mean what they mean there; Off stops at
+    /// the system wherever there is an MP (<see cref="MachineCapabilities.CanPowerOffSystemOnly"/>).
+    /// A machine with no service processor but an outlet - most of what a terminal-server-only
+    /// machine is - still has on and off, through the outlet.
     /// </summary>
     private MachineCapabilities Caps => MachineCapabilities.For(Config.Current, Window.MachineId);
 
@@ -154,12 +162,14 @@
                 MnemonicIndex = 0,
                 Items =
                 [
-                    // On and off need only an outlet; reset has no equivalent and is dead
-                    // without a management processor that defines the task.
+                    // On needs only an outlet. Off stops at the system wherever there is a
+                    // management processor and leaves the outlet on, so there it needs the MP's
+                    // poweroff task; a machine with no MP is switched at its outlet. Reset has no
+                    // outlet equivalent and is dead without the task.
                     CdeMenuItem.Of("Power on", () => StartPowerAsync(PowerAction.On),
                         disabled: !Caps.CanPowerOn),
                     CdeMenuItem.Of("Power off", () => AskPowerAsync(PowerAction.Off),
-                        disabled: !Caps.CanPowerOff),
+                        disabled: !Caps.CanPowerOffSystemOnly),
                     CdeMenuItem.Separator,
                     CdeMenuItem.Of("Reset", () => AskPowerAsync(PowerAction.Reset),
                         disabled: !Caps.CanReset),
@@ -217,6 +227,15 @@
         {
             await JS.InvokeVoidAsync("syscmdUi.initWindow", Window.WindowElementId, _self);
             await JS.InvokeVoidAsync("syscmdConsole.open", Window.TerminalElementId, SocketUrl());
+
+            // A new window starts from whatever this browser last chose. After that the window
+            // keeps its own copy, so toggling one console does not repaint the others.
+            if (await JS.InvokeAsync<string?>("syscmdUi.readSetting", BlackSetting) == "1")
+            {
+                Window.BlackBackground = true;
+                BuildMenus();
+                StateHasChanged();
+            }
 
             // The terminal is new even when the window is not - navigating away and back
             // re-attaches it - so the override has to be re-applied rather than assumed.
@@ -279,6 +298,13 @@
         Window.BlackBackground = !Window.BlackBackground;
         await Invoke("setBlack", Window.BlackBackground);
 
+        // Remembered for the next console this browser opens, including after a reload.
+        try
+        {
+            await JS.InvokeVoidAsync("syscmdUi.writeSetting", BlackSetting, Window.BlackBackground ? "1" : "0");
+        }
+        catch (JSDisconnectedException) { /* the preference is a convenience, not state we need */ }
+
         // The menu carries the toggle's state, so it has to be rebuilt for the indicator to move.
         BuildMenus();
         StateHasChanged();
@@ -288,26 +314,28 @@
 
     /// <summary>
     /// Queues a power action and says so. Everything here goes through MachinePowerService, the
-    /// same path the dashboard and the machine list use, so the shutdown-confirmation guarantee
-    /// holds: switching a machine off asks its MP first and leaves the outlet on if it never
-    /// confirms. The console is a view of the machine, not a way around its rules.
+    /// same path the dashboard and the machine list use. Off stops at the system: the MP shuts the
+    /// machine down and the outlet is left on, so the MP stays reachable to bring it back up. The
+    /// console is a view of the system running on the machine, not a way to cut its power; a
+    /// machine with no MP has only its outlet, and that is what Off switches there.
     /// </summary>
     private async Task StartPowerAsync(PowerAction action)
     {
         _confirm = null;
 
+        string message;
         try
         {
-            var job = Power.EnqueueMachinePower(Window.MachineId, action, force: false);
-            _notice = $"{job.Title} queued. Watch it on the Jobs page.";
+            var job = Power.EnqueueMachinePower(Window.MachineId, action, force: false, PowerOffMode.SystemOnly);
+            message = $"{job.Title} queued. Watch it on the Jobs page.";
         }
         catch (Exception ex)
         {
-            _notice = ex.Message;
+            message = ex.Message;
         }
 
         await Task.Yield();
-        StateHasChanged();
+        await NoticeAsync(message);
     }
 
     /// <summary>
@@ -320,7 +348,7 @@
 
         _confirm = action == PowerAction.Off
             ? new PendingPower(action, "Power off", "Power off",
-                PowerPrompts.OffConfirm(Caps, name, MpTypeName))
+                PowerPrompts.SystemOffConfirm(Caps, name, MpTypeName))
             : new PendingPower(action, "Reset", "Reset",
                 $"Reset {name} through its management processor? " +
                 "Anything running on it stops without a clean shutdown.");
@@ -405,15 +433,35 @@
         catch (JSDisconnectedException) { return default!; }
     }
 
-    /// <summary>Show a transient line under the terminal; it clears itself.</summary>
-    private async Task NoticeAsync(string message)
+    /// <summary>
+    /// How long a line under the terminal stays up: long enough to read a queued job's title and go
+    /// and find it on the Jobs page. A newer notice replaces it sooner.
+    /// </summary>
+    private static readonly TimeSpan NoticeLifetime = TimeSpan.FromSeconds(30);
+
+    /// <summary>Which notice is showing, so a timer only ever clears the one it was started for.</summary>
+    private int _noticeId;
+
+    /// <summary>
+    /// Show a line under the terminal. It clears itself after <see cref="NoticeLifetime"/> without
+    /// holding up the caller - a menu action that awaited the timer would sit unfinished for the
+    /// whole time it was on screen.
+    /// </summary>
+    private Task NoticeAsync(string message)
     {
         _notice = message;
+        var id = ++_noticeId;
         StateHasChanged();
-        await Task.Delay(4000);
-        if (_disposed || _notice != message) return;
+        _ = ClearNoticeAsync(id);
+        return Task.CompletedTask;
+    }
+
+    private async Task ClearNoticeAsync(int id)
+    {
+        await Task.Delay(NoticeLifetime);
+        if (_disposed || id != _noticeId) return;
         _notice = null;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task SafeCloseTerminalAsync()

@@ -118,5 +118,17 @@ console.log('\n[8] power, cost and config');
   ok((await get('/config')).issues.length === 0, 'no configuration errors');
 }
 
+console.log('\n[9] powering off a machine whose outlet is already off');
+{
+  // Its MP is dark along with everything else on the outlet, so asking it how the shutdown is
+  // going can only fail. Nothing is running, and the job should say so rather than fail.
+  await post('/pdus/sim-pdu/outlets/1', { action: 'off', force: true });
+  await sleep(2000);
+  const done = await wait((await post('/machines/rp3440/power', { action: 'off' })).jobId);
+  ok(done.status === 'Succeeded', 'it succeeds instead of failing on a dark MP', done.error || '');
+  ok(done.progress.some(p => /already off/.test(p)), 'and says the outlet was already off');
+  ok(await outlet(1) === 'Off', 'the outlet is still off');
+}
+
 console.log(`\n${pass}/${pass + fail} checks passed`);
 process.exit(fail ? 1 : 0);

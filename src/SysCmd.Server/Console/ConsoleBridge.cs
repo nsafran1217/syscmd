@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using SysCmd.Core.Configuration;
+using SysCmd.Core.Consoles;
 using SysCmd.Core.Events;
 using SysCmd.Core.Mp;
 
@@ -10,8 +11,9 @@ namespace SysCmd.Server.Console;
 /// Pumps bytes between a browser terminal and a telnet session. The endpoint lease is taken for
 /// the life of the window, so opening a console genuinely reserves the wire — a power job that
 /// needs the same console-server port is told it is busy instead of silently interleaving.
+/// Everything the device sends is also written to that session's console log.
 /// </summary>
-public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, EventLog events)
+public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, EventLog events, ConsoleLogStore logs)
 {
     private static readonly TimeSpan LeaseWait = TimeSpan.FromSeconds(2);
 
@@ -62,6 +64,10 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
             events.Info("console", $"Console opened on {machine.DisplayName} ({label}) at {endpoint}", machine.Id);
             await SendTextAsync(socket, $"\x1b[33m*** Connected to {endpoint} - {machine.DisplayName} {label} ***\x1b[0m\r\n", ct);
 
+            // A new file for every session, begun once the far end has answered: a console that
+            // never connected has nothing to record, and why it did not is in the event log.
+            await using var transcript = logs.Start(machine, target, endpoint);
+
             // Shared between the two pumps: the browser asks for a login on the control channel,
             // and the device-to-browser pump is what actually drives it.
             var login = new LoginState(snapshot, machine, target);
@@ -81,7 +87,7 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
                 {
                     // Either direction ending tears down the other, so a dropped telnet session
                     // closes the browser tab's socket rather than leaving it hanging.
-                    var device = PumpDeviceToBrowserAsync(session, socket, login, linked.Token);
+                    var device = PumpDeviceToBrowserAsync(session, socket, login, transcript, linked.Token);
                     var browser = PumpBrowserToDeviceAsync(socket, session, login, events, machine, linked.Token);
 
                     var first = await Task.WhenAny(device, browser);
@@ -101,13 +107,14 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
                 }
             }
 
+            transcript?.Note($"Closed {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz} - {endedBy}");
             events.Info("console", $"Console closed on {machine.DisplayName} - {endedBy}", machine.Id);
             await CloseAsync(socket, "session ended", ct);
         }
     }
 
     private static async Task PumpDeviceToBrowserAsync(
-        TelnetSession session, WebSocket socket, LoginState login, CancellationToken ct)
+        TelnetSession session, WebSocket socket, LoginState login, ConsoleLogWriter? transcript, CancellationToken ct)
     {
         var buffer = new byte[4096];
         while (!ct.IsCancellationRequested && socket.State == WebSocketState.Open)
@@ -116,6 +123,9 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
             if (read == 0) return;
 
             var text = Encoding.ASCII.GetString(buffer, 0, read);
+
+            // Logged before it is sent, so output that arrives as the browser goes away is kept.
+            transcript?.Write(buffer.AsSpan(0, read));
             await socket.SendAsync(buffer.AsMemory(0, read), WebSocketMessageType.Binary, true, ct);
 
             // Watching the same bytes the browser is being shown keeps a single reader on the

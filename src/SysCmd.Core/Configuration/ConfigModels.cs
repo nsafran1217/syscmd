@@ -18,10 +18,12 @@ public sealed class AppConfig
     private SiteConfig _site = new();
     private PowerConfig _power = new();
     private OrchestrationConfig _orchestration = new();
+    private ConsoleLogConfig _consoleLogs = new();
 
     public SiteConfig Site { get => _site; set => _site = value ?? new(); }
     public PowerConfig Power { get => _power; set => _power = value ?? new(); }
     public OrchestrationConfig Orchestration { get => _orchestration; set => _orchestration = value ?? new(); }
+    public ConsoleLogConfig ConsoleLogs { get => _consoleLogs; set => _consoleLogs = value ?? new(); }
 }
 
 public sealed class SiteConfig
@@ -69,6 +71,15 @@ public sealed class OrchestrationConfig
     public int PowerOffConfirmTimeoutSeconds { get; set; } = 300;
 
     public int PowerOffPollIntervalSeconds { get; set; } = 10;
+}
+
+public sealed class ConsoleLogConfig
+{
+    /// <summary>Whether console sessions are recorded. Turning it off leaves open sessions logging.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Days a log is kept after it was last written. Zero keeps every log forever.</summary>
+    public int RetentionDays { get; set; } = 30;
 }
 
 // ------------------------------------------------------- pdu-types/*.yaml

@@ -36,8 +36,9 @@ public sealed class ConsoleWindow
     public bool Attached { get; set; }
 
     /// <summary>
-    /// Forces a plain black terminal instead of following the palette. Per window and not
-    /// persisted, like the geometry beside it: it survives navigating away, not a reload.
+    /// Forces a plain black terminal instead of following the palette. A new window starts from
+    /// the browser's last choice, which TerminalWindow keeps in local storage; from then on it is
+    /// this window's own, so toggling one console does not repaint the others.
     /// </summary>
     public bool BlackBackground { get; set; }
 }

@@ -34,6 +34,14 @@ public sealed record MachineCapabilities(
     /// </summary>
     public bool CanPowerOff => HasOutlet || MpPowerOff;
 
+    /// <summary>
+    /// Taking power away from a console, which stops at the system wherever there is a management
+    /// processor (<see cref="PowerOffMode.SystemOnly"/>). With an MP that needs its poweroff task,
+    /// since the outlet is left alone and there would be nothing else to do; without one, the
+    /// outlet is all there is.
+    /// </summary>
+    public bool CanPowerOffSystemOnly => HasMp ? MpPowerOff : HasOutlet;
+
     /// <summary>Reset only ever goes through the MP; cycling an outlet is a different, blunter thing.</summary>
     public bool CanReset => MpReset;
 

@@ -1191,6 +1191,25 @@ label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
 
 .table-scroll { overflow-x: auto; }
 
+.cde-table tbody tr.selected { background: var(--table-hover); }
+
+/* The console log viewer: a session's text as it was sent, in the terminal's own colours. It
+   scrolls inside itself in both directions, since a console line is as wide as the device made it. */
+.log-view {
+    margin: 0;
+    padding: 8px 10px;
+    max-height: 60vh;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: pre;
+    background: var(--terminal);
+    color: var(--terminal-fg);
+    border: 2px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
 /* ------------------------------------------------------------- context menu */
 
 .cde-contextmenu {

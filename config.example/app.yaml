@@ -27,3 +27,10 @@ orchestration:
   # If this expires the outlet is deliberately LEFT ON and the job fails.
   powerOffConfirmTimeoutSeconds: 300
   powerOffPollIntervalSeconds: 10
+
+consoleLogs:
+  # Every console session is written to data/console-logs/<machine>/, one file per session, from
+  # the moment it connects until it closes. Browse and download them at /console-logs.
+  enabled: true
+  # Days a log is kept after it was last written. 0 keeps every log forever.
+  retentionDays: 30

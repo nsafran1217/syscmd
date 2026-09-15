@@ -41,6 +41,8 @@ public static class ConfigValidator
                 Warn("app.yaml", "power.pollIntervalSeconds below 5s will hammer the PDUs.");
             if (app.Power.CostPerKwh < 0)
                 Error("app.yaml", "power.costPerKwh cannot be negative.");
+            if (app.ConsoleLogs.RetentionDays < 0)
+                Error("app.yaml", "consoleLogs.retentionDays cannot be negative; use 0 to keep logs forever.");
         });
 
         foreach (var (id, t) in pduTypes)

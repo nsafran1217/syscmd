@@ -50,6 +50,19 @@ public static class PowerPrompts
                     : $"Shut {machineName} down, then switch its outlet off? " +
                       $"Nothing on {Name(mpTypeName)} can confirm it went down.";
 
+    /// <summary>
+    /// The are-you-sure for a console's Power off, which leaves the outlet on wherever there is a
+    /// management processor to shut the system down with (<see cref="PowerOffMode.SystemOnly"/>).
+    /// Without one the outlet is all there is, and the machine list's wording is the true one.
+    /// </summary>
+    public static string SystemOffConfirm(MachineCapabilities caps, string machineName, string? mpTypeName) =>
+        !caps.HasMp
+            ? OffConfirm(caps, machineName, mpTypeName)
+            : caps.MpReportsPowerState
+                ? $"Shut {machineName} down through its management processor? Its outlet stays on."
+                : $"Shut {machineName} down through its management processor? Its outlet stays on, " +
+                  $"and nothing on {Name(mpTypeName)} can confirm the shutdown.";
+
     private static string Name(string? mpTypeName) =>
         string.IsNullOrWhiteSpace(mpTypeName) ? "This machine's MP" : mpTypeName;
 }

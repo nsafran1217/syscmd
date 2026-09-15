@@ -25,3 +25,9 @@ orchestration:
   # How long to wait for a machine to confirm it is off. On timeout the outlet is LEFT ON.
   powerOffConfirmTimeoutSeconds: 90
   powerOffPollIntervalSeconds: 8
+
+consoleLogs:
+  # Every console session is written to data.sim/console-logs/<machine>/, one file per session.
+  enabled: true
+  # Days a log is kept after it was last written. 0 keeps every log forever.
+  retentionDays: 30

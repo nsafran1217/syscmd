@@ -68,23 +68,33 @@ ok(await blackItem().locator('.menu-toggle').count() === 1, 'it is a toggle, dra
 ok(await blackItem().getAttribute('aria-checked') === 'false', 'and starts clear');
 await p.screenshot({ path: `${shots}/console-options.png` });
 
+const background = () => p.evaluate(() => {
+  const v = document.querySelector('.terminal-host .xterm-viewport');
+  return v ? getComputedStyle(v).backgroundColor : '';
+});
+const isBlack = bg => /rgb\(0,\s*0,\s*0\)/.test(bg || '');
+
 await blackItem().click();
 await p.waitForTimeout(700);
-const viewport = await p.evaluate(() => {
-  const v = document.querySelector('.terminal-host .xterm-viewport');
-  return v ? getComputedStyle(v).backgroundColor : null;
-});
-ok(/rgb\(0,\s*0,\s*0\)/.test(viewport || ''), 'the terminal goes black', viewport);
+let bg = await background();
+ok(isBlack(bg), 'the terminal goes black', bg);
+
+// Saved per browser: a reload takes every window away, and the console opened afterwards should
+// come back black without being asked again.
+await p.reload({ waitUntil: 'networkidle' });
+await p.waitForFunction(() => window.Blazor !== undefined);
+await p.waitForTimeout(1500);
+await p.locator('tr', { hasText: 'HP rp3440' }).locator('button', { hasText: /^MP$/ }).first().click();
+await p.waitForTimeout(3500);
+bg = await background();
+ok(isBlack(bg), 'and comes back on the next console after a reload', bg);
 
 await options().click();
 await p.waitForTimeout(350);
-ok(await blackItem().getAttribute('aria-checked') === 'true', 'and the indicator now reads set');
+ok(await blackItem().getAttribute('aria-checked') === 'true', 'with the indicator reading set');
 await blackItem().click();
 await p.waitForTimeout(600);
-ok(!/rgb\(0,\s*0,\s*0\)/.test(await p.evaluate(() => {
-  const v = document.querySelector('.terminal-host .xterm-viewport');
-  return v ? getComputedStyle(v).backgroundColor : '';
-})), 'toggling back returns it to the palette');
+ok(!isBlack(await background()), 'toggling back returns it to the palette');
 
 console.log('\n[power, through the management processor]');
 
@@ -98,6 +108,21 @@ for (const label of ['Power on', 'Power off', 'Reset']) {
 }
 await p.screenshot({ path: `${shots}/console-power.png` });
 
+// Queueing says so under the terminal, and the line clears itself rather than sitting there for
+// the life of the window. rp3440 is already on, so this job only confirms that.
+const notice = () => win.locator('.terminal-notice');
+await item('Power on').click();
+await p.waitForTimeout(800);
+const queuedText = (await notice().count()) ? await notice().textContent() : '';
+ok(/queued/.test(queuedText), 'Power on says the job was queued', queuedText);
+await p.waitForTimeout(20000);
+ok(await notice().count() === 1, 'the message stays up long enough to read');
+await p.waitForTimeout(12000);
+ok(await notice().count() === 0, 'and clears itself after about 30 seconds');
+
+await power().click();
+await p.waitForTimeout(350);
+
 // Anything that takes power away asks first, and cancelling must queue nothing.
 const before = (await api('/jobs')).length;
 await item('Reset').click();
@@ -107,6 +132,28 @@ await p.locator('.cde-dialog button', { hasText: 'Cancel' }).click();
 await p.waitForTimeout(500);
 ok(!await p.locator('.cde-dialog').isVisible(), 'and cancelling closes the dialog');
 ok((await api('/jobs')).length === before, 'cancelling queued nothing');
+
+// Off from a console is the system, not the outlet: the MP shuts the machine down and the outlet
+// is left on, so the MP stays reachable to bring it back up. The machine list's Off is the one
+// that cuts power.
+await power().click();
+await p.waitForTimeout(350);
+await item('Power off').click();
+await p.waitForTimeout(600);
+const offAsk = (await p.locator('.cde-dialog').textContent()).replace(/\s+/g, ' ').trim();
+ok(/outlet stays on/i.test(offAsk), 'Power off says the outlet stays on', offAsk.slice(0, 90));
+const known = new Set((await api('/jobs')).map(j => j.id));
+await p.locator('.cde-dialog button', { hasText: /^Power off$/ }).click();
+let offJob;
+for (let i = 0; i < 75; i++) {
+  await p.waitForTimeout(2000);
+  offJob = (await api('/jobs')).find(j => !known.has(j.id) && /Power off HP rp3440/.test(j.title));
+  if (offJob && ['Succeeded', 'Failed'].includes(offJob.status)) break;
+}
+ok(offJob?.status === 'Succeeded', 'the system shuts down', offJob?.error || offJob?.status || 'no job');
+ok(!!offJob?.progress.some(l => /Confirmed: the system is powered off/.test(l)), 'confirmed by the MP');
+const outletNow = (await api('/pdus/sim-pdu/outlets')).find(o => o.outlet === 1)?.state;
+ok(outletNow === 'On', 'and its outlet is left on', outletNow);
 
 // Close this one before opening the next, so the two windows do not confuse the locators.
 await win.locator('.cw-menu-btn').dblclick();
