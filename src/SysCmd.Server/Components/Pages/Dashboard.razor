@@ -65,6 +65,14 @@
             </div>
         </div>
 
+        @if (PowerExclusions.Names(_excludedPdus, _pdus) is { Count: > 0 } left)
+        {
+            <p class="muted" style="margin:10px 0 0; font-size:12px;">
+                Power figures leave out @string.Join(", ", left) -
+                <a href="/power">change</a>.
+            </p>
+        }
+
         @if (_status.ConfigErrors > 0)
         {
             <p style="margin-top:12px;">
@@ -406,6 +414,9 @@
     /// <summary>Outlets with no machine bound to them are hidden by default.</summary>
     private bool _hideUnassigned = true;
 
+    /// <summary>PDUs this browser leaves out of the power figures; chosen on the Power page.</summary>
+    private HashSet<string> _excludedPdus = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Outlets to draw for a PDU, after the unassigned filter.</summary>
     private IReadOnlyList<OutletStatus> VisibleOutlets(PduStatus pdu) =>
         _hideUnassigned
@@ -434,7 +445,7 @@
 
     protected override async Task LoadAsync(CancellationToken ct)
     {
-        _status = await StatusService.GetAsync(ct);
+        _status = await StatusService.GetAsync(ct, _excludedPdus);
         _pdus = await Pdus.ReadAllAsync(ct);
         _machines = await Machines.ListAsync(ct);
         _groups = await Groups.ListAsync(ct);
@@ -453,7 +464,11 @@
             var stored = await JS.InvokeAsync<string?>("syscmdUi.readSetting", "syscmd.hideUnassigned");
             _hideUnassigned = stored != "0";
 
-            StateHasChanged();
+            _excludedPdus = await PowerExclusions.ReadAsync(JS);
+
+            // The figures were read before the exclusions were known, so read them again.
+            if (_excludedPdus.Count > 0) await RefreshNowAsync();
+            else StateHasChanged();
         }
         catch (JSDisconnectedException) { /* the circuit went away */ }
     }

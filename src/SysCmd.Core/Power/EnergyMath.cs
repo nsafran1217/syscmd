@@ -24,11 +24,6 @@ public static class EnergyMath
         return wattSeconds / 3600.0 / 1000.0;
     }
 
-    /// <summary>Sum energy across PDUs, integrating each series separately before adding them up.</summary>
-    public static double KilowattHoursAcrossPdus(IReadOnlyList<PowerSample> samples, TimeSpan? maxGap = null)
-        => samples.GroupBy(s => s.PduId, StringComparer.OrdinalIgnoreCase)
-            .Sum(g => KilowattHours([.. g], maxGap));
-
     public static decimal Cost(double kilowattHours, decimal costPerKwh)
         => Math.Round((decimal)kilowattHours * costPerKwh, 2, MidpointRounding.AwayFromZero);
 }

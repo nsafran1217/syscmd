@@ -25,7 +25,8 @@ public sealed record LabStatus(
 public sealed class LabStatusService(
     ConfigStore config, PduService pdus, MachineService machines, PowerSummaryCache power, JobQueue jobs)
 {
-    public async Task<LabStatus> GetAsync(CancellationToken ct)
+    /// <param name="excludedPduIds">PDUs to leave out of the power figures; the counts still cover them.</param>
+    public async Task<LabStatus> GetAsync(CancellationToken ct, IReadOnlySet<string>? excludedPduIds = null)
     {
         var snapshot = config.Current;
         var pduStates = await pdus.ReadAllAsync(ct);
@@ -41,7 +42,7 @@ public sealed class LabStatusService(
             PdusReachable: pduStates.Count(p => p.Reachable),
             PdusTotal: pduStates.Count,
             ActiveJobs: jobs.Active().Count,
-            Power: power.Current())
+            Power: power.Current(excludedPduIds))
         {
             ConfigErrors = snapshot.Issues.Count(i => i.Severity == ConfigIssueSeverity.Error),
         };

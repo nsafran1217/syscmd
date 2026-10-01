@@ -5,6 +5,7 @@
 @inject PowerSummaryCache Summary
 @inject PduService Pdus
 @inject ConfigStore Config
+@inject IJSRuntime JS
 
 <PageTitle>Power</PageTitle>
 
@@ -49,12 +50,23 @@
             <div class="stat-note">per kWh &middot; <a href="/config">change</a></div>
         </div>
     </div>
+
+    @if (PowerExclusions.Names(_excluded, _pdus) is { Count: > 0 } left)
+    {
+        <p class="muted" style="margin:10px 0 0; font-size:12px;">
+            Not counting @string.Join(", ", left) - see <em>Per-PDU Readings</em> below.
+        </p>
+    }
 </CdeWindow>
 
 <CdeWindow Title="@($"Draw - last {_hours} hours")">
     <h2 style="margin:0 0 10px; font-size:16px;">Recorded Draw</h2>
 
-    @if (_series.Count == 0)
+    @if (_pdus.Count > 0 && _pdus.All(p => _excluded.Contains(p.PduId)))
+    {
+        <p class="muted">Every PDU is left out of the figures. Tick one under <em>Per-PDU Readings</em>.</p>
+    }
+    else if (_series.Count == 0)
     {
         <p class="muted">
             No readings in this window yet. Samples are written every
@@ -93,11 +105,18 @@
     <h2 style="margin:0 0 10px; font-size:16px;">Per-PDU Readings</h2>
     <div class="table-scroll">
         <table class="cde-table">
-            <thead><tr><th>PDU</th><th>State</th><th>Watts</th><th>Amps</th><th>Outlets on</th></tr></thead>
+            <thead><tr><th style="width:1%" title="Count this PDU in the power and cost figures">Counted</th><th>PDU</th><th>State</th><th>Watts</th><th>Amps</th><th>Outlets on</th></tr></thead>
             <tbody>
                 @foreach (var pdu in _pdus)
                 {
-                    <tr>
+                    var counted = !_excluded.Contains(pdu.PduId);
+                    <tr class="@(counted ? "" : "muted")">
+                        <td>
+                            <input type="checkbox" checked="@counted"
+                                   title="@($"Count {pdu.Name} in the power and cost figures")"
+                                   aria-label="@($"Count {pdu.Name} in the power and cost figures")"
+                                   @onchange="e => OnCountedChanged(pdu.PduId, e)" />
+                        </td>
                         <td>@pdu.Name</td>
                         <td>
                             @if (pdu.Reachable)
@@ -129,24 +148,52 @@
     private IReadOnlyList<PduStatus> _pdus = [];
     private double _peak, _mean;
 
+    /// <summary>PDUs this browser leaves out of the figures. Shared with the dashboard.</summary>
+    private HashSet<string> _excluded = new(StringComparer.OrdinalIgnoreCase);
+
     protected override TimeSpan RefreshInterval => TimeSpan.FromSeconds(15);
 
     protected override async Task LoadAsync(CancellationToken ct)
     {
-        _summary = Summary.Current();
+        _summary = Summary.Current(_excluded);
         _pdus = await Pdus.ReadAllAsync(ct);
 
         var to = DateTimeOffset.Now;
         var from = to.AddHours(-_hours);
 
-        // Sum concurrent readings across PDUs into a single whole-lab series.
+        // Sum concurrent readings across the counted PDUs into a single whole-lab series.
         _series = [.. History.Read(from, to)
+            .Where(s => !_excluded.Contains(s.PduId))
             .GroupBy(s => s.Timestamp)
             .OrderBy(g => g.Key)
             .Select(g => new PowerSample(g.Key, "all", g.Sum(s => s.Watts), g.Sum(s => s.Amps), g.First().Volts))];
 
         _peak = _series.Count > 0 ? _series.Max(s => s.Watts) : 0;
         _mean = _series.Count > 0 ? _series.Average(s => s.Watts) : 0;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !RendererInfo.IsInteractive) return;
+        try
+        {
+            _excluded = await PowerExclusions.ReadAsync(JS);
+            if (_excluded.Count > 0) await RefreshNowAsync();
+        }
+        catch (JSDisconnectedException) { /* the circuit went away */ }
+    }
+
+    private async Task OnCountedChanged(string pduId, ChangeEventArgs e)
+    {
+        if (e.Value is true) _excluded.Remove(pduId);
+        else _excluded.Add(pduId);
+
+        await RefreshNowAsync();
+        try
+        {
+            await PowerExclusions.WriteAsync(JS, _excluded);
+        }
+        catch (JSDisconnectedException) { /* the preference is a convenience */ }
     }
 
     /// <summary>Scale the series into the SVG viewBox, leaving headroom above the peak.</summary>
