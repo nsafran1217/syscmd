@@ -16,16 +16,31 @@ endpoint lease.
 `behaviour-smoke.mjs` covers the navigation layout, the PDU skip-confirmation toggle, and stopping
 a running job — including that an outlet the killed job had not reached is left on.
 
-`window-rollup-smoke.mjs` rolls a console window up and back, checking it returns to its original
-size and can still be resized afterwards.
+`window-rollup-smoke.mjs` rolls a console window up and back with a title-bar double-click,
+checking it returns to its original size and can still be resized afterwards.
+
+`window-iconify-smoke.mjs` covers what a console window does besides float: that the minimise box
+iconifies it to an icon directly under the navigation panel, or in the bottom-left corner with the
+panel hidden, and that the icon restores it still connected and refitted to 80x24 or better; that
+the wheel stays inside the terminal at the end of its scrollback rather than scrolling the page;
+that `consoles.sendKeys` puts Ctrl-T on the Send menu; and that Pop out opens the console in a
+browser window of its own, titled for it, which takes the session over without finding the port
+busy and closes itself from its own Close.
+
+`power-period-smoke.mjs` covers the Power page's period picker. It works out the energy, cost,
+mean and peak for September 2026 from `data.sim/power/2026-09.csv` itself and checks a custom
+range shows the same, that a range entered backwards means the same range, that every preset
+resolves, and that the choice, custom dates included, survives a reload. Run it from the same
+checkout as the server; it skips itself if the CSV is not there.
 
 `config-edit-smoke.mjs` checks the machine editor shows credentials in the clear and that the
 hostname Look up button fills in the IP, leaves it alone when the name does not resolve, and says
 why.
 
 `dashboard-smoke.mjs` covers the unassigned-outlet filter, that clicking an outlet on switches only
-the outlet, the machine list's power controls, and that a long status message does not make an
-outlet button outgrow its neighbours.
+the outlet, the machine list's power controls, that a long status message does not make an
+outlet button outgrow its neighbours, and that an outlet's `…` menu moves with the outlet when the
+page scrolls.
 
 `log-column-smoke.mjs` checks the event log window's top and bottom finish level with the centre
 stack, that it scrolls with the page rather than being pinned, that it does not change height as
@@ -91,6 +106,8 @@ SHOTS=./shots node tests/ui-smoke.mjs         # responsive layout and touch path
 SHOTS=./shots node tests/window-smoke.mjs     # window decorations, menus, drag, resize
 SHOTS=./shots node tests/behaviour-smoke.mjs  # navigation, confirmation toggle, killing a job
 SHOTS=./shots node tests/window-rollup-smoke.mjs  # roll up, restore and resize a console window
+SHOTS=./shots node tests/window-iconify-smoke.mjs # minimise to an icon, pop out, wheel, Send keys
+SHOTS=./shots node tests/power-period-smoke.mjs   # Power page periods against the CSV itself
 node tests/power-smoke.mjs                    # watts vs current readings and energy accrual
 SHOTS=./shots node tests/theme-smoke.mjs      # CDE palettes, backdrops and the Motif colour maths
 SHOTS=./shots node tests/console-smoke.mjs    # console size floor, black background, power menu

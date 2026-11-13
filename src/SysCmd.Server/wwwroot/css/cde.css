@@ -587,7 +587,8 @@ h1:focus { outline: none; }
 
 /* The front panel: colour set 8. */
 .app-topbar,
-.app-nav {
+.app-nav,
+.icon-tray {
     --face: var(--cs8-bg);
     --highlight: var(--cs8-ts);
     --shadow: var(--cs8-bs);
@@ -804,6 +805,109 @@ h1:focus { outline: none; }
 
 .app-nav .nav-close a { font-weight: bold; }
 
+/* ---------------------------------------------------------- minimised windows */
+
+/*
+   Iconified consoles. dtwm leaves an icon on the root window for each one; here they gather in a
+   small panel of the front panel's colour set. While the navigation is a column the panel sits in
+   that column directly under it. Otherwise - navigation hidden, or a drawer on a narrow screen -
+   it pins itself to the bottom-left corner, so a minimised window can never end up somewhere that
+   nothing on screen leads back to.
+
+   The column placement needs the shell to have two rows: the panel takes the second, under the
+   navigation, and the content spans both. The second row is flexible so that only the navigation
+   sizes the first; otherwise the content's height would be shared between the rows and push the
+   panel a long way down the page.
+*/
+.icon-tray {
+    position: fixed;
+    left: 8px;
+    bottom: 8px;
+    /* Over the page, under the top strip and the drawer, and under the floating windows - an
+       icon belongs to the desktop, which is beneath every window. */
+    z-index: 300;
+    max-width: calc(100vw - 16px);
+    display: flex;
+    flex-direction: column;
+    background: var(--face);
+    padding: var(--frame-border);
+    border: var(--frame-bevel) solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+    box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+.icon-tray > .cde-titlebar { margin-bottom: 4px; }
+
+.icon-tray-icons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px;
+    max-height: 40vh;
+    overflow: auto;
+    border: 1px solid;
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+    background: var(--cs8-sel);
+}
+
+/* An icon is a picture with its label in a box beneath it, the label taking the select colour
+   while the pointer is over it. */
+.cde-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    width: 112px;
+    padding: 4px 2px;
+    font: inherit;
+    font-size: 11px;
+    color: var(--fg);
+    background: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+
+.cde-icon img { image-rendering: pixelated; }
+
+.cde-icon-label {
+    max-width: 100%;
+    padding: 1px 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: var(--face);
+    border: 1px solid;
+    border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+}
+
+.cde-icon:hover .cde-icon-label,
+.cde-icon:focus-visible .cde-icon-label {
+    background: var(--face-pressed);
+    border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+@media (min-width: 900px) {
+    .app-shell.nav-auto,
+    .app-shell.nav-open { grid-template-rows: auto 1fr; }
+
+    .app-shell.nav-auto > .app-nav,
+    .app-shell.nav-open > .app-nav { grid-column: 1; grid-row: 1; }
+
+    .app-shell.nav-auto > .app-main,
+    .app-shell.nav-open > .app-main { grid-column: 2; grid-row: 1 / span 2; }
+
+    .app-shell.nav-auto > .icon-tray,
+    .app-shell.nav-open > .icon-tray {
+        position: static;
+        grid-column: 1;
+        grid-row: 2;
+        width: 250px;
+        max-width: none;
+        margin-top: 8px;
+        box-shadow: none;
+    }
+}
+
 /* ------------------------------------------------------- floating windows */
 
 /*
@@ -928,6 +1032,32 @@ h1:focus { outline: none; }
 .cde-window.maximised .cw-handle,
 .cde-window.shaded .cw-handle { display: none; }
 
+/* Iconified: hidden rather than removed, so the terminal and its session carry on underneath. */
+.window-layer .cde-window.minimised { display: none; }
+
+/* A console popped out into a browser window of its own fills that window; the window manager
+   outside the browser draws the frame that matters. */
+.popout-shell {
+    position: fixed;
+    inset: 0;
+    display: flex;
+}
+
+.popout-shell > .cde-window {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.popout-shell > .cde-window > .window-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 8px;
+}
+
 /* A window being dragged should not let the pointer select text underneath it. */
 body.cw-dragging { user-select: none; cursor: move; }
 body.cw-resizing { user-select: none; cursor: nwse-resize; }
@@ -999,7 +1129,7 @@ body.cw-resizing { user-select: none; cursor: nwse-resize; }
 /* Keeps a table's action buttons on one line instead of stacking in a narrow column. */
 .btn-row.nowrap { flex-wrap: nowrap; }
 
-input[type=text], input[type=number], input[type=password], select, textarea {
+input[type=text], input[type=number], input[type=password], input[type=date], select, textarea {
     font: inherit;
     color: var(--field-fg);
     background: var(--field-bg);
@@ -1014,6 +1144,30 @@ textarea { font-family: var(--mono); font-size: 12px; }
 
 label { display: block; font-size: 12px; margin-bottom: 12px; }
 label > span { display: block; margin-bottom: 3px; color: var(--label-fg); }
+
+/* The console Send menu editor on the Configuration page: label, keys and a remove button to a
+   row, with whatever is wrong with the entry spelled out underneath it. */
+.send-keys { display: grid; gap: 2px; margin-bottom: 10px; }
+
+.send-key-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 0 10px;
+    align-items: end;
+}
+
+.send-key-row label,
+.send-key-row .cde-btn { margin-bottom: 6px; }
+
+.send-key-row input { width: 100%; }
+.send-key-row input.mono { font-family: var(--mono); }
+
+.send-key-problem {
+    grid-column: 1 / -1;
+    margin: -2px 0 6px;
+    font-size: 11px;
+    color: var(--danger-fg);
+}
 
 /* ---------------------------------------------------------------------- LEDs */
 

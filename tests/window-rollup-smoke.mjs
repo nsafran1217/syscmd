@@ -21,20 +21,24 @@ const win = p.locator('.window-layer .cde-window').first();
 const original = await win.boundingBox();
 console.log(`  (opened at ${Math.round(original.width)}x${Math.round(original.height)})`);
 
-console.log('\n[roll up and unroll with the title-bar box]');
-await win.locator('.cw-min').click();
+// On a console the title-bar box minimises to an icon (window-iconify-smoke covers that), so a
+// console rolls up the other way CDE offers: a double-click on its title bar.
+const rollUp = () => win.locator('.cw-title').dblclick();
+
+console.log('\n[roll up and unroll with a title-bar double-click]');
+await rollUp();
 await p.waitForTimeout(400);
 const shaded = await win.boundingBox();
 ok(shaded.height < original.height / 2, 'rolls up to the title bar', `${Math.round(shaded.height)}px`);
 
-await win.locator('.cw-min').click();
+await rollUp();
 await p.waitForTimeout(500);
 const back = await win.boundingBox();
 ok(Math.abs(back.height - original.height) < 8 && Math.abs(back.width - original.width) < 8,
    'unrolls to the same size', `${Math.round(back.width)}x${Math.round(back.height)}`);
 
 console.log('\n[window menu no longer duplicates Restore]');
-await win.locator('.cw-min').click();      // roll up again
+await rollUp();      // roll up again
 await p.waitForTimeout(400);
 await win.locator('.cw-menu-btn').click();
 await p.waitForTimeout(300);
@@ -42,8 +46,9 @@ const menu = win.locator('.cde-dropdown').first();
 const labels = (await menu.locator('button').allInnerTexts()).map(t => t.trim());
 ok(!labels.includes('Unroll'), 'no duplicate Unroll entry', labels.join(' | '));
 ok(labels.includes('Restore'), 'Restore present');
+// Minimize iconifies a console rather than rolling it up, so being rolled up is no reason to grey it.
 const minDisabled = await menu.locator('button', { hasText: 'Minimize' }).isDisabled();
-ok(minDisabled, 'Minimize greys out while already rolled up');
+ok(!minDisabled, 'Minimize stays available while rolled up, since it iconifies');
 
 await menu.locator('button', { hasText: 'Restore' }).click();
 await p.waitForTimeout(600);
@@ -67,7 +72,7 @@ ok(resized.width > restored.width + 110 && resized.height > restored.height + 70
    'grip resizes after the roll-up cycle', `${Math.round(resized.width)}x${Math.round(resized.height)}`);
 
 console.log('\n[dragging while rolled up keeps the restored size]');
-await win.locator('.cw-min').click();
+await rollUp();
 await p.waitForTimeout(400);
 const bar = await win.boundingBox();
 await p.mouse.move(bar.x + bar.width / 2, bar.y + 10);
@@ -75,7 +80,7 @@ await p.mouse.down();
 await p.mouse.move(bar.x + bar.width / 2 - 120, bar.y + 90, { steps: 10 });
 await p.mouse.up();
 await p.waitForTimeout(400);
-await win.locator('.cw-min').click();
+await rollUp();
 await p.waitForTimeout(500);
 const afterDrag = await win.boundingBox();
 ok(Math.abs(afterDrag.height - resized.height) < 10,

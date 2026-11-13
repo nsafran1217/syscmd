@@ -58,6 +58,14 @@ window.syscmdConsole = (function () {
         term.open(element);
         try { fit.fit(); } catch (e) { /* zero-sized while the window animates in */ }
 
+        // xterm scrolls its own viewport and only cancels the wheel while it has scrollback left to
+        // move through, so at either end the gesture fell through and scrolled the page behind the
+        // window. Cancelling it here, after xterm has had it, keeps the wheel inside the console.
+        // xterm moves its viewport itself rather than relying on the browser's default scroll, and
+        // a program that asked for mouse reports still gets them, so nothing inside is lost.
+        const onWheel = (e) => { if (e.cancelable) e.preventDefault(); };
+        element.addEventListener('wheel', onWheel, { passive: false });
+
         const socket = new WebSocket(wsUrl);
         socket.binaryType = 'arraybuffer';
 
@@ -79,7 +87,7 @@ window.syscmdConsole = (function () {
         });
         observer.observe(element);
 
-        return { term, fit, socket, observer, element, fontSize: 13, black: false };
+        return { term, fit, socket, observer, element, onWheel, fontSize: 13, black: false };
     }
 
     return {
@@ -197,6 +205,7 @@ window.syscmdConsole = (function () {
             const i = instances.get(elementId);
             if (!i) return;
             try { i.observer.disconnect(); } catch (e) { }
+            try { i.element.removeEventListener('wheel', i.onWheel); } catch (e) { }
             try { i.socket.close(); } catch (e) { }
             try { i.term.dispose(); } catch (e) { }
             instances.delete(elementId);

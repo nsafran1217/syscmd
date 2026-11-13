@@ -3,6 +3,11 @@
 @inject ConfigStore Config
 @inject IJSRuntime JS
 
+@* The fallback title. A page's own PageTitle renders after this one and wins; a plain <title> in
+   App.razor would not, since the browser takes the first title in the document and that one
+   comes before anything a page can add. *@
+<PageTitle>syscmd</PageTitle>
+
 @*
     The top strip is a sibling of the shell, not a child of the content column: the content
     column declares a CSS container, which makes it a containing block for fixed positioning
@@ -35,6 +40,12 @@
         @Body
     </div>
     </main>
+
+    @* Minimised consoles. Sits in the navigation's column, under the panel, while there is one;
+       otherwise it pins itself to the bottom-left corner so a minimised window is never lost
+       behind a hidden panel. A sibling of the content column for the same reason as the top
+       strip: anything that may be fixed-positioned has to live outside it. *@
+    <MinimisedWindows />
 
     @* Console windows float above the page and outlive navigation. *@
     <ConsoleWindowHost />

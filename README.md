@@ -331,11 +331,14 @@ rather than being painted on:
 
 - The left title-bar box is the **window menu** (Restore / Minimize / Maximize / Close), exactly
   as Motif places it. Double-clicking it closes the window.
-- The right boxes **roll the window up** and **maximise** it. Every window has a working minimise
-  box; `Collapsible` is on by default.
+- The right boxes **minimise** and **maximise** it. On a console window minimise iconifies, as
+  dtwm's does: the window goes and an icon stands in for it under the navigation panel, or in
+  the bottom-left corner while the panel is hidden, with the session still connected behind it.
+  A page window has nowhere to be iconified to, so its box rolls it up to its title bar instead
+  (`Collapsible` is on by default). Double-clicking any title bar rolls that window up.
 - The **menu bar does something**. A console window's Window / Edit / Send / Options / Help
-  pull-downs close it, copy and paste the buffer, send control keys (`^C`, `^D`, `^B`, Break),
-  change the text size and reconnect the session.
+  pull-downs minimise, pop out and close it, copy and paste the buffer, send control keys (`^C`,
+  `^D`, `^B`, Break, plus any the lab adds), change the text size and reconnect the session.
 
 `CdeWindow` is the single component behind all of this, and `CdeMenu` / `CdeMenuItem` describe a
 pull-down. No colour is written down in `cde.css` at all: the stylesheet is generated from a real
@@ -402,3 +405,17 @@ router, so a session survives navigating to another page — closing a console s
 not a side effect of clicking Configuration. Opening the same target twice raises the existing
 window instead of fighting over the endpoint lease. Below 720px a floating window fills the screen,
 which is why there is no separate full-page console route to keep in step with this one.
+
+**Window > Pop out** moves a console into a small browser window of its own
+(`/popout/console/{machine}?target=mp|serial`), which the desktop's window manager can put
+anywhere, including outside the main browser window. It is the same `TerminalWindow` filling that
+window instead of floating, so every menu still works. The pop-out is opened first, while the
+click still counts as one to the pop-up blocker, and only then does the in-page window close; the
+pop-out connects a moment later, by which time the lease is free. A blocked pop-up leaves the
+console where it was and says so.
+
+**Custom Send keys.** `consoles.sendKeys` in `app.yaml`, also editable under Configuration, adds
+lab-wide entries to every console's Send menu. Keys are written the way a terminal prints them:
+`^T` is Ctrl-T, `^[` is Escape, `^?` is Delete, and `\r \n \t \e \xHH` are escapes, so `~.` or a
+whole command can be sent as easily as a control key. An entry that does not parse is reported as
+a config problem and left off the menu.

@@ -159,6 +159,33 @@ await sleep(500);
 labels = p.locator('label:has-text("Label") input');
 ok(await labels.nth(1).inputValue() === '', 'the second is left blank', `"${await labels.nth(1).inputValue()}"`);
 
+console.log('\n[an outlet menu stays with its outlet while the page scrolls]');
+{
+  // A short viewport, so the dashboard is taller than the window and the page really scrolls.
+  const q = await (await b.newContext({ viewport: { width: 1400, height: 600 } })).newPage();
+  await q.goto('http://localhost:5080/', { waitUntil: 'networkidle' });
+  await ready(q);
+  const dots = q.locator('.outlet-menu-btn').first();
+  await dots.click();
+  await sleep(500);
+  const offset = async () => {
+    const a = await dots.boundingBox(), m = await q.locator('.cde-contextmenu').boundingBox();
+    return [Math.round(m.x - a.x), Math.round(m.y - a.y)];
+  };
+  const before = await offset();
+  await q.mouse.wheel(0, 200);
+  await sleep(400);
+  const scrolled = await q.evaluate(() => window.scrollY);
+  const after = await offset();
+  ok(scrolled > 0 && before[0] === after[0] && before[1] === after[1],
+     'the menu moves with the outlet it was opened from',
+     `scrolled ${scrolled}px, offset ${before} -> ${after}`);
+
+  const box = await q.locator('.cde-contextmenu').boundingBox();
+  ok(box.y + box.height <= 600 || box.y >= 4, 'it opens inside the viewport');
+  await q.close();
+}
+
 await b.close();
 console.log(`\n${pass}/${pass + fail} checks passed`);
 process.exit(fail ? 1 : 0);

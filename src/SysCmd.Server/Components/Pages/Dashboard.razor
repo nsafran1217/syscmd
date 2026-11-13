@@ -136,7 +136,7 @@
                            || (outlet.MachineId is { } mid && Jobs.ActiveForMachine(mid) is not null);
                 var machine = outlet.MachineId is null ? null : _machines.FirstOrDefault(m => m.Id == outlet.MachineId);
 
-                <div class="outlet-cell">
+                <div class="outlet-cell" id="@OutletAnchorId(pdu.PduId, outlet.Outlet)">
                     <button type="button"
                             class="cde-btn outlet @(busy ? "busy" : "")"
                             disabled="@(!pdu.Reachable || busy)"
@@ -353,6 +353,7 @@
 
 @* ------------------------------------------------- outlet menu (right-click or …) *@
 <ContextMenu Visible="_menu is not null" Title="@_menu?.Title" X="_menu?.X ?? 0" Y="_menu?.Y ?? 0"
+             AnchorId="@(_menu is { } open ? OutletAnchorId(open.PduId, open.Outlet) : null)"
              OnClose="CloseMenu">
     @if (_menu is { } menu)
     {
@@ -566,6 +567,9 @@
     }
 
     private void CloseMenu() => _menu = null;
+
+    /// <summary>The outlet's cell, which its menu stays pinned to while the page scrolls.</summary>
+    private static string OutletAnchorId(string pduId, int outlet) => $"outlet-{pduId}-{outlet}";
 
     private async Task RunOutletAsync(OutletMenu menu, PowerAction action, bool force)
     {

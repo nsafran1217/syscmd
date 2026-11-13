@@ -23,7 +23,7 @@
             {
                 <div class="cde-dropdown" @onclick:stopPropagation="true">
                     <button type="button" @onclick="Restore" disabled="@(!IsShaded && !Maximised)">Restore</button>
-                    <button type="button" @onclick="ToggleShade" disabled="@(!CanMinimise || IsShaded)">Minimize</button>
+                    <button type="button" @onclick="MinimiseAsync" disabled="@(!CanMinimise || (!Iconifies && IsShaded))">Minimize</button>
                     <button type="button" @onclick="ToggleMaximise" disabled="@(!CanMaximise || Maximised)">Maximize</button>
                     <hr />
                     <button type="button" @onclick="CloseIfPossible" disabled="@(!CanClose)">Close</button>
@@ -35,9 +35,9 @@
 
         @if (CanMinimise)
         {
-            <button type="button" class="cw-box cw-min"
-                    title="@(IsShaded ? "Unroll" : "Roll up")" aria-label="@(IsShaded ? "Unroll" : "Roll up")"
-                    @onclick="ToggleShade" @onclick:stopPropagation="true">
+            var label = Iconifies ? "Minimize" : IsShaded ? "Unroll" : "Roll up";
+            <button type="button" class="cw-box cw-min" title="@label" aria-label="@label"
+                    @onclick="MinimiseAsync" @onclick:stopPropagation="true">
                 <span class="glyph"></span>
             </button>
         }
@@ -210,12 +210,21 @@
     [Parameter] public EventCallback<bool> MaximisedChanged { get; set; }
     [Parameter] public EventCallback OnActivate { get; set; }
 
+    /// <summary>
+    /// Set to make the minimise box iconify the window - take it off screen, to be restored from
+    /// elsewhere - as dtwm's does, rather than roll it up where it stands. Rolling up stays on a
+    /// double-click of the title bar. Without it the box rolls up, which is all a page window,
+    /// with nowhere to be iconified to, can usefully do.
+    /// </summary>
+    [Parameter] public EventCallback OnMinimise { get; set; }
+
     private string? _openMenu;
     private bool _windowMenuOpen;
     private bool _selfShaded;
 
     private bool CanClose => OnClose.HasDelegate;
-    private bool CanMinimise => ShadedChanged.HasDelegate || Collapsible;
+    private bool CanMinimise => Iconifies || ShadedChanged.HasDelegate || Collapsible;
+    private bool Iconifies => OnMinimise.HasDelegate;
     private bool CanMaximise => MaximisedChanged.HasDelegate;
 
     /// <summary>Shading is the caller's when it supplies a callback, otherwise ours.</summary>
@@ -306,7 +315,20 @@
     private Task Activate() => OnActivate.HasDelegate ? OnActivate.InvokeAsync() : Task.CompletedTask;
 
     /// <summary>Double-clicking the title bar rolls the window up, as it does in CDE.</summary>
-    private Task OnTitleDoubleClick() => CanMinimise ? ToggleShade() : Task.CompletedTask;
+    private Task OnTitleDoubleClick() =>
+        ShadedChanged.HasDelegate || Collapsible ? ToggleShade() : Task.CompletedTask;
+
+    private async Task MinimiseAsync()
+    {
+        if (!Iconifies)
+        {
+            await ToggleShade();
+            return;
+        }
+
+        CloseMenus();
+        await OnMinimise.InvokeAsync();
+    }
 
     private async Task ToggleShade()
     {

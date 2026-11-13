@@ -116,6 +116,53 @@
         </p>
     </div>
 
+    <div class="cde-panel">
+        <h3>Console Send menu</h3>
+        <p class="muted" style="font-size:11px; margin:0 0 10px;">
+            Extra keys for the Send menu of every console window, after the built-in ones.
+            Write a control key the way a terminal shows it: <span class="mono">^T</span> is Ctrl-T,
+            <span class="mono">^[</span> is Escape, <span class="mono">^?</span> is Delete. Escapes
+            <span class="mono">\r \n \t \e \xHH</span> also work, <span class="mono">\^</span> and
+            <span class="mono">\\</span> are a literal caret and backslash, and anything else is
+            sent as typed, so <span class="mono">~.</span> sends a tilde and a dot.
+        </p>
+
+        @if (_app.Consoles.SendKeys.Count > 0)
+        {
+            <div class="send-keys">
+                @for (var i = 0; i < _app.Consoles.SendKeys.Count; i++)
+                {
+                    var key = _app.Consoles.SendKeys[i];
+                    var index = i;
+                    var problem = SendKeyProblem(key);
+                    <div class="send-key-row">
+                        <label>
+                            <span>Menu label</span>
+                            <input type="text" placeholder="Ctrl-T" @bind="key.Label" @bind:event="oninput" />
+                        </label>
+                        <label>
+                            <span>Keys</span>
+                            <input type="text" class="mono" placeholder="^T" @bind="key.Keys" @bind:event="oninput" />
+                        </label>
+                        <button type="button" class="cde-btn small" title="Remove this entry"
+                                @onclick="() => _app.Consoles.SendKeys.RemoveAt(index)">Remove</button>
+                        @if (problem is not null)
+                        {
+                            <span class="send-key-problem">@problem</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <p class="muted" style="font-size:12px;">No extra keys yet.</p>
+        }
+
+        <button type="button" class="cde-btn small"
+                @onclick="() => _app.Consoles.SendKeys.Add(new SendKeyConfig())">Add a key</button>
+    </div>
+
     <div class="btn-row">
         <button class="cde-btn" @onclick="SaveAppAsync">Save settings</button>
         <button class="cde-btn" @onclick="ReloadApp">Discard changes</button>
@@ -187,12 +234,36 @@
                 Enabled = current.ConsoleLogs.Enabled,
                 RetentionDays = current.ConsoleLogs.RetentionDays,
             },
+            // Copied entry by entry: the editor binds straight to these, so sharing them with the
+            // live config would change open consoles' menus before anything was saved.
+            Consoles = new ConsoleConfig
+            {
+                SendKeys = [.. current.Consoles.SendKeys
+                    .Where(k => k is not null)
+                    .Select(k => new SendKeyConfig { Label = k.Label, Keys = k.Keys })],
+            },
         };
         _saved = null;
     }
 
+    /// <summary>What is wrong with one Send entry as typed, or null when it is ready to save.</summary>
+    private static string? SendKeyProblem(SendKeyConfig key)
+    {
+        if (string.IsNullOrWhiteSpace(key.Label) && string.IsNullOrEmpty(key.Keys)) return "Give it a label and keys.";
+        if (string.IsNullOrWhiteSpace(key.Label)) return "Needs a label for the menu.";
+        return SendKeyNotation.TryParse(key.Keys, out var why) is null ? $"Keys: {why}." : null;
+    }
+
     private Task SaveAppAsync()
     {
+        // Checked here as well as by the validator, so a typo is caught before it is written
+        // rather than reported as a config problem once it has been.
+        if (_app.Consoles.SendKeys.Select(SendKeyProblem).FirstOrDefault(p => p is not null) is { } problem)
+        {
+            _saved = $"Not saved - a Send menu entry is incomplete. {problem}";
+            return Task.CompletedTask;
+        }
+
         try
         {
             Config.SaveApp(_app);

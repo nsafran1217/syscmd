@@ -12,6 +12,9 @@ public sealed class ConsoleWindow
 
     public string Title => $"{MachineName} - {(Target == ConsoleTarget.Mp ? "management processor" : "serial console")}";
 
+    /// <summary>What a minimised window's icon is labelled with: short enough to sit under it.</summary>
+    public string IconLabel => $"{MachineName} {(Target == ConsoleTarget.Mp ? "MP" : "serial")}";
+
     /// <summary>The DOM id the terminal attaches to; also what the JS side keys its instance by.</summary>
     public string TerminalElementId => $"term-{Id}";
 
@@ -31,6 +34,13 @@ public sealed class ConsoleWindow
     public int ZIndex { get; set; }
     public bool Shaded { get; set; }
     public bool Maximised { get; set; }
+
+    /// <summary>
+    /// Iconified: off screen and shown as an icon under the navigation panel instead. Distinct from
+    /// <see cref="Shaded"/>, which rolls the frame up to its title bar where it stands. The session
+    /// stays connected either way - the window is hidden, not closed.
+    /// </summary>
+    public bool Minimised { get; set; }
 
     /// <summary>Set once the browser has attached a terminal, so we do not attach twice.</summary>
     public bool Attached { get; set; }
@@ -59,7 +69,8 @@ public sealed class ConsoleWindowManager
     /// <summary>Raised when a window is opened, closed or re-ordered, so the host can re-render.</summary>
     public event Action? Changed;
 
-    public ConsoleWindow? Top => _windows.Count == 0 ? null : _windows.MaxBy(w => w.ZIndex);
+    /// <summary>The window with focus. A minimised one cannot have it, being nowhere to be seen.</summary>
+    public ConsoleWindow? Top => _windows.Where(w => !w.Minimised).MaxBy(w => w.ZIndex);
 
     /// <summary>
     /// Open a console, or raise the existing one. Opening the same target twice would fight over
@@ -69,7 +80,7 @@ public sealed class ConsoleWindowManager
     {
         if (_windows.FirstOrDefault(w => w.MachineId == machineId && w.Target == target) is { } existing)
         {
-            Focus(existing.Id);
+            Restore(existing.Id);
             return existing;
         }
 
@@ -108,6 +119,29 @@ public sealed class ConsoleWindowManager
     {
         if (_windows.FirstOrDefault(w => w.Id == id) is not { } window) return;
         if (window.ZIndex == _nextZ - 1) return;      // already on top
+        window.ZIndex = _nextZ++;
+        Changed?.Invoke();
+    }
+
+    /// <summary>Iconify a window. Its session stays open; only the frame goes.</summary>
+    public void Minimise(string id)
+    {
+        if (_windows.FirstOrDefault(w => w.Id == id) is not { Minimised: false } window) return;
+        window.Minimised = true;
+        Changed?.Invoke();
+    }
+
+    /// <summary>Bring a window back from its icon, or forward if it was only behind another.</summary>
+    public void Restore(string id)
+    {
+        if (_windows.FirstOrDefault(w => w.Id == id) is not { } window) return;
+        if (!window.Minimised)
+        {
+            Focus(id);
+            return;
+        }
+
+        window.Minimised = false;
         window.ZIndex = _nextZ++;
         Changed?.Invoke();
     }

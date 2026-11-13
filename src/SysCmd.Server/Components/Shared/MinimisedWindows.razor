@@ -1,0 +1,38 @@
+@* Minimised console windows, drawn as CDE desktop icons under the navigation panel. dtwm puts an
+   iconified window's icon on the root window; this app's equivalent of the root window's left edge
+   is the column the front panel stands in. Each icon restores its window, whose session never
+   stopped. *@
+@implements IDisposable
+@inject ConsoleWindowManager Windows
+
+@if (Windows.Windows.Where(w => w.Minimised).ToList() is { Count: > 0 } minimised)
+{
+    <section class="icon-tray" aria-label="Minimized windows">
+        <div class="cde-titlebar">
+            <span class="cw-title">Minimized</span>
+        </div>
+        <div class="icon-tray-icons">
+            @foreach (var window in minimised)
+            {
+                <button type="button" class="cde-icon" @key="window.Id"
+                        title="@($"Restore {window.Title}")" aria-label="@($"Restore {window.Title}")"
+                        @onclick="() => Windows.Restore(window.Id)">
+                    <img src="img/icons/Dtterm.m.bmp" alt="" width="32" height="32" />
+                    <span class="cde-icon-label">@window.IconLabel</span>
+                </button>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    protected override void OnInitialized() => Windows.Changed += OnChanged;
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { /* the circuit is gone */ }
+    }
+
+    public void Dispose() => Windows.Changed -= OnChanged;
+}

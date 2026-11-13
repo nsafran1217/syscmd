@@ -89,6 +89,88 @@ window.syscmdUi = {
         }
     },
 
+    // ----------------------------------------------------------- context menus
+
+    // Keeps a context menu where it was opened relative to the element it was opened from. The
+    // menu is fixed-positioned, so without this it stays put in the viewport while the page
+    // scrolls the button away from under it. Each adjustment is measured against where the menu
+    // actually landed rather than computed from the anchor alone, so it is right whichever box
+    // the browser resolves the fixed position against.
+    anchorMenu: function (menuId, anchorId) {
+        const menu = document.getElementById(menuId);
+        if (!menu) return;
+        if (menu._ctxCleanup) menu._ctxCleanup();
+
+        const shift = (dx, dy) => {
+            if (!dx && !dy) return;
+            menu.style.left = (parseFloat(menu.style.left) || 0) + dx + 'px';
+            menu.style.top = (parseFloat(menu.style.top) || 0) + dy + 'px';
+        };
+
+        // A phone shows the menu as a bottom sheet, which is pinned by the stylesheet and has
+        // nothing to follow or pull back on screen.
+        const sheet = () => window.matchMedia('(max-width: 640px)').matches;
+
+        // Pull it back on screen now it can be measured - the server placed it at the pointer
+        // without knowing how big the viewport is.
+        if (!sheet()) {
+            const box = menu.getBoundingClientRect();
+            const dx = Math.min(0, window.innerWidth - 4 - box.right) || Math.max(0, 4 - box.left);
+            const dy = Math.min(0, window.innerHeight - 4 - box.bottom) || Math.max(0, 4 - box.top);
+            shift(dx, dy);
+        }
+
+        const anchor = anchorId ? document.getElementById(anchorId) : null;
+        if (!anchor) return;
+
+        const a0 = anchor.getBoundingClientRect(), m0 = menu.getBoundingClientRect();
+        const offX = m0.left - a0.left, offY = m0.top - a0.top;
+
+        const follow = () => {
+            if (!menu.isConnected || !anchor.isConnected) { cleanup(); return; }
+            if (sheet()) return;
+            const a = anchor.getBoundingClientRect(), m = menu.getBoundingClientRect();
+            shift(a.left + offX - m.left, a.top + offY - m.top);
+        };
+
+        // Captured, so a scroll inside any scrolling box carries the menu too, not just the page.
+        window.addEventListener('scroll', follow, { capture: true, passive: true });
+        window.addEventListener('resize', follow);
+        const cleanup = () => {
+            window.removeEventListener('scroll', follow, { capture: true });
+            window.removeEventListener('resize', follow);
+            menu._ctxCleanup = null;
+        };
+        menu._ctxCleanup = cleanup;
+    },
+
+    releaseMenu: function (menuId) {
+        const menu = document.getElementById(menuId);
+        if (menu && menu._ctxCleanup) menu._ctxCleanup();
+    },
+
+    // ---------------------------------------------------------------- pop-outs
+
+    // Opens a console in a window of its own, which the window manager can put anywhere -
+    // including outside this browser window. The name is per console, so popping the same one
+    // out twice reuses its window instead of stacking up copies. Returns false when a pop-up
+    // blocker refused it, so the caller can leave the console where it is.
+    popOut: function (url, name, width, height) {
+        const left = Math.max(0, (window.screenX || 0) + 60);
+        const top = Math.max(0, (window.screenY || 0) + 60);
+        const features = 'popup=yes,width=' + width + ',height=' + height + ',left=' + left + ',top=' + top;
+        const opened = window.open(url, name, features);
+        if (!opened) return false;
+        try { opened.focus(); } catch (e) { /* focus is a nicety */ }
+        return true;
+    },
+
+    // Closes a pop-out from its own Close entry. A browser only lets script close a window that
+    // script opened, so a pop-out reached by typing its address in stays open; the page says so.
+    closeSelf: function () {
+        window.close();
+    },
+
     // ---------------------------------------------------------------- windows
 
     // Dragging and resizing run entirely in the browser. Doing it through Blazor would

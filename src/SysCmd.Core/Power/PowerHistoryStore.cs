@@ -56,7 +56,18 @@ public sealed class PowerHistoryStore
     /// <summary>Read samples in a window, walking only the monthly files that can contain it.</summary>
     public IReadOnlyList<PowerSample> Read(DateTimeOffset from, DateTimeOffset to, string? pduId = null)
     {
-        var samples = new List<PowerSample>();
+        var samples = ReadEach(from, to, pduId).ToList();
+        samples.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
+        return samples;
+    }
+
+    /// <summary>
+    /// The same samples as <see cref="Read"/>, streamed in file order rather than collected and
+    /// sorted, so a year of readings can be reduced without holding a year of readings. File order
+    /// is the order they were appended in, which is time order unless the clock went backwards.
+    /// </summary>
+    public IEnumerable<PowerSample> ReadEach(DateTimeOffset from, DateTimeOffset to, string? pduId = null)
+    {
         var month = new DateTimeOffset(from.Year, from.Month, 1, 0, 0, 0, from.Offset);
 
         while (month <= to)
@@ -69,14 +80,11 @@ public sealed class PowerHistoryStore
                     if (Parse(line) is not { } sample) continue;
                     if (sample.Timestamp < from || sample.Timestamp > to) continue;
                     if (pduId is not null && !sample.PduId.Equals(pduId, StringComparison.OrdinalIgnoreCase)) continue;
-                    samples.Add(sample);
+                    yield return sample;
                 }
             }
             month = month.AddMonths(1);
         }
-
-        samples.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
-        return samples;
     }
 
     private static PowerSample? Parse(string line)

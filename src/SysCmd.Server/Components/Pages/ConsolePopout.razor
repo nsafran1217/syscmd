@@ -1,0 +1,65 @@
+@page "/popout/console/{MachineId}"
+@layout PopoutLayout
+@implements IDisposable
+@inject ConfigStore Config
+@inject ConsoleWindowManager Windows
+
+@*
+    A console in a browser window of its own, opened by a console window's Pop out. It is the same
+    TerminalWindow, filling the browser window instead of floating over the page, so the menus,
+    power controls and Send keys are all still there. The circuit is this window's own, and so is
+    its ConsoleWindowManager: closing the main window leaves this one running.
+*@
+
+<PageTitle>@(_window?.Title ?? "Console")</PageTitle>
+
+@if (_window is { } window && Windows.Windows.Contains(window))
+{
+    <TerminalWindow @key="window.Id" Window="window" Standalone="true" Active="true" />
+}
+else
+{
+    <CdeWindow Title="Console">
+        <p>@(_problem ?? "This console has been closed. You can close this window.")</p>
+        @if (_problem is null)
+        {
+            <button type="button" class="cde-btn" @onclick="Open">Reconnect</button>
+        }
+    </CdeWindow>
+}
+
+@code {
+    [Parameter] public string MachineId { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "target")] public string? Target { get; set; }
+
+    private ConsoleWindow? _window;
+    private string? _problem;
+
+    protected override void OnInitialized()
+    {
+        Windows.Changed += OnChanged;
+        Open();
+    }
+
+    private void Open()
+    {
+        if (Config.Current.Machine(MachineId) is not { } machine)
+        {
+            _problem = $"There is no machine called '{MachineId}'.";
+            return;
+        }
+
+        var target = string.Equals(Target, "serial", StringComparison.OrdinalIgnoreCase)
+            ? ConsoleTarget.Serial
+            : ConsoleTarget.Mp;
+        _window = Windows.Open(machine.Id, machine.DisplayName, target);
+    }
+
+    private void OnChanged()
+    {
+        try { _ = InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { /* the circuit is gone */ }
+    }
+
+    public void Dispose() => Windows.Changed -= OnChanged;
+}

@@ -43,6 +43,22 @@ public static class ConfigValidator
                 Error("app.yaml", "power.costPerKwh cannot be negative.");
             if (app.ConsoleLogs.RetentionDays < 0)
                 Error("app.yaml", "consoleLogs.retentionDays cannot be negative; use 0 to keep logs forever.");
+
+            for (var i = 0; i < app.Consoles.SendKeys.Count; i++)
+            {
+                // A bare "-" in the list is a null entry, so it is reported rather than dereferenced.
+                var where = $"consoles.sendKeys[{i}]";
+                if (app.Consoles.SendKeys[i] is not { } key)
+                {
+                    Error("app.yaml", $"{where} is empty; give it a label and keys, or remove it.");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(key.Label))
+                    Error("app.yaml", $"{where} needs a label for the Send menu.");
+                if (SysCmd.Core.Consoles.SendKeyNotation.TryParse(key.Keys, out var why) is null)
+                    Error("app.yaml", $"{where} ({key.Label}): keys '{key.Keys}' - {why}.");
+            }
         });
 
         foreach (var (id, t) in pduTypes)

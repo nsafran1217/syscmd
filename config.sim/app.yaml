@@ -31,3 +31,13 @@ consoleLogs:
   enabled: true
   # Days a log is kept after it was last written. 0 keeps every log forever.
   retentionDays: 30
+
+consoles:
+  # Extra entries for the Send menu of every console window, after the built-in control keys.
+  # keys is written the way a terminal shows a control key: ^T is Ctrl-T, ^[ is Escape, ^? is
+  # Delete. \r \n \t \e and \xHH are escapes, \^ and \\ are a literal caret and backslash, and
+  # anything else is sent as typed. Quote it with single quotes, so YAML leaves the backslashes
+  # alone. Also editable from the GUI under Configuration.
+  sendKeys:
+    - label: Ctrl-T
+      keys: '^T'

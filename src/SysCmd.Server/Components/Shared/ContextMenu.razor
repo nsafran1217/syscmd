@@ -1,11 +1,13 @@
 @* CDE-style right-click menu, positioned at the pointer. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 
 @if (Visible)
 {
     @* Full-screen catcher so any click or right-click elsewhere dismisses the menu. *@
     <div class="cde-overlay" style="background:transparent"
          @onclick="Close" @oncontextmenu="Close" @oncontextmenu:preventDefault="true">
-        <div class="cde-contextmenu" style="@PositionStyle"
+        <div class="cde-contextmenu" id="@_menuId" style="@PositionStyle"
              @onclick:stopPropagation="true" role="menu">
             @if (!string.IsNullOrEmpty(Title))
             {
@@ -24,8 +26,20 @@
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
-    // Anchor to whichever corner keeps the menu on screen; the viewport size is not
-    // known server-side, so bias away from the edges using the click position alone.
+    /// <summary>
+    /// The element the menu was opened from. While it is set the menu keeps its place relative to
+    /// that element, so scrolling the page carries the menu along with the button instead of
+    /// leaving it hanging in the viewport over whatever scrolled in underneath.
+    /// </summary>
+    [Parameter] public string? AnchorId { get; set; }
+
+    private readonly string _menuId = $"ctx-{Guid.NewGuid():n}"[..12];
+
+    /// <summary>What the browser was last told to anchor, so it is told once per opening.</summary>
+    private (double X, double Y, string? Anchor)? _anchored;
+
+    // The viewport size is not known server-side, so this places the menu at the pointer and the
+    // browser pulls it back on screen once it has measured it.
     private string PositionStyle
     {
         get
@@ -36,5 +50,33 @@
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!RendererInfo.IsInteractive) return;
+
+        try
+        {
+            if (Visible && _anchored != (X, Y, AnchorId))
+            {
+                _anchored = (X, Y, AnchorId);
+                await JS.InvokeVoidAsync("syscmdUi.anchorMenu", _menuId, AnchorId);
+            }
+            else if (!Visible && _anchored is not null)
+            {
+                _anchored = null;
+                await JS.InvokeVoidAsync("syscmdUi.releaseMenu", _menuId);
+            }
+        }
+        catch (JSDisconnectedException) { /* the browser went away */ }
+    }
+
     private Task Close() => OnClose.InvokeAsync();
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_anchored is null) return;
+        try { await JS.InvokeVoidAsync("syscmdUi.releaseMenu", _menuId); }
+        catch (JSDisconnectedException) { /* already gone */ }
+        catch (InvalidOperationException) { /* torn down before interop was available */ }
+    }
 }

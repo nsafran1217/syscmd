@@ -12,13 +12,21 @@
 <CdeWindow Title="Power and Cost">
     <div class="spread" style="margin-bottom:12px;">
         <h1 style="margin:0; font-size:20px;">Power and Cost</h1>
-        <div class="btn-row">
-            <select @bind="_hours" @bind:after="RefreshNowAsync">
-                <option value="6">Last 6 hours</option>
-                <option value="24">Last 24 hours</option>
-                <option value="168">Last 7 days</option>
-                <option value="720">Last 30 days</option>
+        <div class="btn-row period-picker">
+            <select aria-label="Period to show" @bind="_period" @bind:after="OnPeriodChangedAsync">
+                @foreach (var (key, label) in PowerPeriods.Choices)
+                {
+                    <option value="@key">@label</option>
+                }
             </select>
+            @if (_period == PowerPeriods.Custom)
+            {
+                <input type="date" aria-label="From" title="From the start of this day"
+                       @bind="_customFrom" @bind:after="OnPeriodChangedAsync" />
+                <span class="muted">to</span>
+                <input type="date" aria-label="To" title="To the end of this day"
+                       @bind="_customTo" @bind:after="OnPeriodChangedAsync" />
+            }
         </div>
     </div>
 
@@ -57,19 +65,43 @@
             Not counting @string.Join(", ", left) - see <em>Per-PDU Readings</em> below.
         </p>
     }
+
+    <h2 style="margin:16px 0 10px; font-size:16px;">@_resolved.Label</h2>
+    <div class="stat-row">
+        <div class="stat">
+            <div class="stat-label">Energy</div>
+            <div class="stat-value">@Kwh(_report.Kwh)<span class="stat-unit">kWh</span></div>
+            <div class="stat-note">@Range</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Cost</div>
+            <div class="stat-value">@Money(EnergyMath.Cost(_report.Kwh, Config.Current.App.Power.CostPerKwh))</div>
+            <div class="stat-note">at the current rate</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Average draw</div>
+            <div class="stat-value">@_report.MeanWatts.ToString("F0")<span class="stat-unit">W</span></div>
+            <div class="stat-note">@_report.Readings.ToString("N0") readings</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Peak draw</div>
+            <div class="stat-value">@_report.PeakWatts.ToString("F0")<span class="stat-unit">W</span></div>
+            <div class="stat-note">highest single reading</div>
+        </div>
+    </div>
 </CdeWindow>
 
-<CdeWindow Title="@($"Draw - last {_hours} hours")">
+<CdeWindow Title="@($"Draw - {_resolved.Label}")">
     <h2 style="margin:0 0 10px; font-size:16px;">Recorded Draw</h2>
 
     @if (_pdus.Count > 0 && _pdus.All(p => _excluded.Contains(p.PduId)))
     {
         <p class="muted">Every PDU is left out of the figures. Tick one under <em>Per-PDU Readings</em>.</p>
     }
-    else if (_series.Count == 0)
+    else if (_report.Segments.Count == 0)
     {
         <p class="muted">
-            No readings in this window yet. Samples are written every
+            No readings in this period. Samples are written every
             @Config.Current.App.Power.PollIntervalSeconds seconds once a PDU reports its load.
         </p>
     }
@@ -79,7 +111,7 @@
             @* Inline SVG keeps this dependency-free and works offline like the rest of the app. *@
             <svg viewBox="0 0 @ChartWidth @ChartHeight" width="100%" height="220"
                  preserveAspectRatio="none" role="img"
-                 aria-label="@($"Power draw over the last {_hours} hours, peaking at {_peak:F0} watts")">
+                 aria-label="@($"Power draw for {_resolved.Label}, peaking at {_report.PeakWatts:F0} watts")">
                 <rect x="0" y="0" width="@ChartWidth" height="@ChartHeight" fill="var(--log-bg)" />
 
                 @foreach (var gridline in new[] { 0.25, 0.5, 0.75 })
@@ -88,15 +120,20 @@
                     <line x1="0" y1="@y" x2="@ChartWidth" y2="@y" stroke="var(--shadow)" stroke-width="1" />
                 }
 
-                <polyline points="@Points" fill="none" stroke="var(--accent)" stroke-width="2"
-                          vector-effect="non-scaling-stroke" />
+                @* One line per unbroken run of readings, so a gap in the history is drawn as one
+                   rather than bridged by a straight line nobody measured. *@
+                @foreach (var segment in _report.Segments)
+                {
+                    <polyline points="@Points(segment)" fill="none" stroke="var(--accent)" stroke-width="2"
+                              vector-effect="non-scaling-stroke" />
+                }
             </svg>
         </div>
 
         <div class="spread muted" style="font-size:11px; margin-top:4px;">
-            <span>@_series[0].Timestamp.ToString("dd MMM HH:mm")</span>
-            <span>peak @_peak.ToString("F0") W &middot; mean @_mean.ToString("F0") W</span>
-            <span>@_series[^1].Timestamp.ToString("dd MMM HH:mm")</span>
+            <span>@Stamp(_resolved.From)</span>
+            <span>peak @_report.PeakWatts.ToString("F0") W &middot; mean @_report.MeanWatts.ToString("F0") W</span>
+            <span>@Stamp(_resolved.End, isEnd: true)</span>
         </div>
     }
 </CdeWindow>
@@ -142,11 +179,21 @@
     private const int ChartWidth = 1000;
     private const int ChartHeight = 200;
 
-    private int _hours = 24;
+    /// <summary>Where this browser keeps the chosen period, so the page reopens on it.</summary>
+    private const string PeriodSetting = "syscmd.powerPeriod";
+
+    private string _period = "24h";
+    private DateOnly _customFrom = DateOnly.FromDateTime(DateTime.Today.AddDays(-6));
+    private DateOnly _customTo = DateOnly.FromDateTime(DateTime.Today);
+
     private PowerSummary _summary = new(0, 0, 0, 0, 0, "USD");
-    private IReadOnlyList<PowerSample> _series = [];
     private IReadOnlyList<PduStatus> _pdus = [];
-    private double _peak, _mean;
+
+    /// <summary>The period the report below was built for, which is what the page describes.</summary>
+    private PowerPeriod _resolved = PowerPeriods.Resolve("24h", DateTime.Now, default, default);
+    private PowerReport _report = PowerReport.Empty(default, default);
+    private DateTimeOffset _reportAt;
+    private bool _reportDirty = true;
 
     /// <summary>PDUs this browser leaves out of the figures. Shared with the dashboard.</summary>
     private HashSet<string> _excluded = new(StringComparer.OrdinalIgnoreCase);
@@ -158,18 +205,61 @@
         _summary = Summary.Current(_excluded);
         _pdus = await Pdus.ReadAllAsync(ct);
 
-        var to = DateTimeOffset.Now;
-        var from = to.AddHours(-_hours);
+        var now = DateTimeOffset.Now;
+        var period = PowerPeriods.Resolve(_period, DateTime.Now, _customFrom, _customTo);
+        if (!_reportDirty && !(period.IsLive(now) && now - _reportAt >= Staleness(period))) return;
 
-        // Sum concurrent readings across the counted PDUs into a single whole-lab series.
-        _series = [.. History.Read(from, to)
-            .Where(s => !_excluded.Contains(s.PduId))
-            .GroupBy(s => s.Timestamp)
-            .OrderBy(g => g.Key)
-            .Select(g => new PowerSample(g.Key, "all", g.Sum(s => s.Watts), g.Sum(s => s.Amps), g.First().Volts))];
+        // A period that has finished cannot change, so it is read once. One still running is read
+        // again as it goes, but a long one far less often than the page refreshes: re-reading a
+        // year of history every 15 seconds would move the line by less than a pixel.
+        var excluded = new HashSet<string>(_excluded, StringComparer.OrdinalIgnoreCase);
+        var poll = Math.Max(5, Config.Current.App.Power.PollIntervalSeconds);
+        var buckets = (int)Math.Clamp((period.End - period.From).TotalSeconds / (poll * 2.0), 2, 720);
 
-        _peak = _series.Count > 0 ? _series.Max(s => s.Watts) : 0;
-        _mean = _series.Count > 0 ? _series.Average(s => s.Watts) : 0;
+        _report = await Task.Run(() => PowerReports.Build(
+            History.ReadEach(period.From, period.DataEnd(now)),
+            period.From, period.End, buckets,
+            id => !excluded.Contains(id)), ct);
+        _resolved = period;
+        _reportAt = now;
+        _reportDirty = false;
+    }
+
+    private static TimeSpan Staleness(PowerPeriod period) =>
+        TimeSpan.FromTicks(Math.Clamp((period.End - period.From).Ticks / 5000,
+            TimeSpan.FromSeconds(15).Ticks, TimeSpan.FromMinutes(5).Ticks));
+
+    private async Task OnPeriodChangedAsync()
+    {
+        _reportDirty = true;
+        await RefreshNowAsync();
+
+        var stored = _period == PowerPeriods.Custom
+            ? $"{PowerPeriods.Custom}:{_customFrom:yyyy-MM-dd}:{_customTo:yyyy-MM-dd}"
+            : _period;
+        try { await JS.InvokeVoidAsync("syscmdUi.writeSetting", PeriodSetting, stored); }
+        catch (JSDisconnectedException) { /* the preference is a convenience */ }
+    }
+
+    /// <summary>Restore the period this browser last looked at, ignoring anything malformed.</summary>
+    private void ApplyStoredPeriod(string? stored)
+    {
+        if (string.IsNullOrEmpty(stored)) return;
+        var parts = stored.Split(':');
+        if (!PowerPeriods.IsKnown(parts[0])) return;
+
+        if (parts[0] == PowerPeriods.Custom)
+        {
+            if (parts.Length != 3
+                || !DateOnly.TryParseExact(parts[1], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var from)
+                || !DateOnly.TryParseExact(parts[2], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var to))
+                return;
+            _customFrom = from;
+            _customTo = to;
+        }
+
+        _period = parts[0];
+        _reportDirty = true;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -178,7 +268,9 @@
         try
         {
             _excluded = await PowerExclusions.ReadAsync(JS);
-            if (_excluded.Count > 0) await RefreshNowAsync();
+            ApplyStoredPeriod(await JS.InvokeAsync<string?>("syscmdUi.readSetting", PeriodSetting));
+            if (_excluded.Count > 0) _reportDirty = true;
+            if (_reportDirty) await RefreshNowAsync();
         }
         catch (JSDisconnectedException) { /* the circuit went away */ }
     }
@@ -188,6 +280,7 @@
         if (e.Value is true) _excluded.Remove(pduId);
         else _excluded.Add(pduId);
 
+        _reportDirty = true;
         await RefreshNowAsync();
         try
         {
@@ -196,25 +289,53 @@
         catch (JSDisconnectedException) { /* the preference is a convenience */ }
     }
 
-    /// <summary>Scale the series into the SVG viewBox, leaving headroom above the peak.</summary>
-    private string Points
+    /// <summary>
+    /// Scale one run of points into the SVG viewBox across the whole period, leaving headroom above
+    /// the peak. A run of one point gets a sliver of a line, since a polyline needs two to show.
+    /// </summary>
+    private string Points(IReadOnlyList<PowerPoint> segment)
+    {
+        var start = _resolved.From.ToUnixTimeMilliseconds();
+        var span = Math.Max(1, _resolved.End.ToUnixTimeMilliseconds() - start);
+        var ceiling = Math.Max(_report.PeakWatts * 1.1, 1);
+
+        var points = segment.Select(s =>
+        {
+            var x = (s.Timestamp.ToUnixTimeMilliseconds() - start) / (double)span * ChartWidth;
+            var y = ChartHeight - (s.Watts / ceiling * ChartHeight);
+            return (x, y);
+        }).ToList();
+        if (points.Count == 1) points.Add((points[0].x + 2, points[0].y));
+
+        return string.Join(' ', points.Select(p => string.Create(CultureInfo.InvariantCulture, $"{p.x:F1},{p.y:F1}")));
+    }
+
+    /// <summary>
+    /// Times on the axis: to the minute for a day or two, to the day beyond that. A period that ends
+    /// at midnight ends at the start of the next day, so shown to the day its end is the day before:
+    /// September is 01 Sep to 30 Sep, not to 01 Oct.
+    /// </summary>
+    private string Stamp(DateTimeOffset at, bool isEnd = false)
+    {
+        if (_resolved.End - _resolved.From <= TimeSpan.FromDays(2)) return at.ToString("dd MMM HH:mm");
+        if (isEnd && at.TimeOfDay == TimeSpan.Zero) at = at.AddDays(-1);
+        return at.ToString("dd MMM yyyy");
+    }
+
+    /// <summary>What the period figures cover, which stops at now for a period still running.</summary>
+    private string Range
     {
         get
         {
-            if (_series.Count < 2) return "";
-
-            var start = _series[0].Timestamp.ToUnixTimeMilliseconds();
-            var span = Math.Max(1, _series[^1].Timestamp.ToUnixTimeMilliseconds() - start);
-            var ceiling = Math.Max(_peak * 1.1, 1);
-
-            return string.Join(' ', _series.Select(s =>
-            {
-                var x = (s.Timestamp.ToUnixTimeMilliseconds() - start) / (double)span * ChartWidth;
-                var y = ChartHeight - (s.Watts / ceiling * ChartHeight);
-                return string.Create(CultureInfo.InvariantCulture, $"{x:F1},{y:F1}");
-            }));
+            var now = DateTimeOffset.Now;
+            return _resolved.IsLive(now)
+                ? $"since {Stamp(_resolved.From)}"
+                : $"{Stamp(_resolved.From)} - {Stamp(_resolved.End, isEnd: true)}";
         }
     }
+
+    /// <summary>A small figure needs its decimals; a year's worth does not.</summary>
+    private static string Kwh(double kwh) => kwh >= 1000 ? kwh.ToString("N0") : kwh >= 10 ? kwh.ToString("F1") : kwh.ToString("F2");
 
     /// <summary>Extrapolate the month's spend from what has been recorded so far.</summary>
     private decimal ProjectedMonthCost

@@ -19,11 +19,13 @@ public sealed class AppConfig
     private PowerConfig _power = new();
     private OrchestrationConfig _orchestration = new();
     private ConsoleLogConfig _consoleLogs = new();
+    private ConsoleConfig _consoles = new();
 
     public SiteConfig Site { get => _site; set => _site = value ?? new(); }
     public PowerConfig Power { get => _power; set => _power = value ?? new(); }
     public OrchestrationConfig Orchestration { get => _orchestration; set => _orchestration = value ?? new(); }
     public ConsoleLogConfig ConsoleLogs { get => _consoleLogs; set => _consoleLogs = value ?? new(); }
+    public ConsoleConfig Consoles { get => _consoles; set => _consoles = value ?? new(); }
 }
 
 public sealed class SiteConfig
@@ -80,6 +82,27 @@ public sealed class ConsoleLogConfig
 
     /// <summary>Days a log is kept after it was last written. Zero keeps every log forever.</summary>
     public int RetentionDays { get; set; } = 30;
+}
+
+/// <summary>Settings shared by every console window.</summary>
+public sealed class ConsoleConfig
+{
+    private List<SendKeyConfig> _sendKeys = [];
+
+    /// <summary>
+    /// Extra entries for the console's Send menu, after the built-in control keys. Lab-wide rather
+    /// than per browser: what a lab's consoles need sending is a property of its hardware.
+    /// </summary>
+    public List<SendKeyConfig> SendKeys { get => _sendKeys; set => _sendKeys = value ?? []; }
+}
+
+/// <summary>One custom Send menu entry. <see cref="Keys"/> is in <see cref="Consoles.SendKeyNotation"/>.</summary>
+public sealed class SendKeyConfig
+{
+    public string Label { get; set; } = "";
+
+    /// <summary>What to send, e.g. <c>^T</c> for Ctrl-T or <c>~.</c> for literal text.</summary>
+    public string Keys { get; set; } = "";
 }
 
 // ------------------------------------------------------- pdu-types/*.yaml
