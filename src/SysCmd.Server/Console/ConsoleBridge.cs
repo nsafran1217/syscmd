@@ -56,6 +56,16 @@ public sealed class ConsoleBridge(ConfigStore config, EndpointBroker broker, Eve
             }
             catch (Exception ex)
             {
+                // Logged as well as shown: the window says it once and is closed, and a console
+                // that never opened is otherwise absent from the event log altogether. A window
+                // closed while still connecting is not a failure worth recording.
+                if (ex is not OperationCanceledException)
+                {
+                    var what = target == ConsoleTarget.Mp ? "management processor" : "serial console";
+                    events.Warn("console",
+                        $"Console on {machine.DisplayName} ({what}) could not connect to {endpoint}: {ex.Message}",
+                        machine.Id);
+                }
                 await CloseWithMessageAsync(socket, $"Could not connect to {endpoint}: {ex.Message}", ct);
                 return;
             }

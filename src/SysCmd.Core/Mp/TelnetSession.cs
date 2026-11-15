@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Sockets;
 
 namespace SysCmd.Core.Mp;
@@ -26,12 +27,34 @@ public sealed class TelnetSession : IAsyncDisposable
 
     public static async Task<TelnetSession> ConnectAsync(string host, int port, TimeSpan connectTimeout, CancellationToken ct)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(connectTimeout);
+
+        // Resolved here rather than left to TcpClient, because a failed lookup and a failed
+        // connection need different answers and the socket error alone cannot tell them apart:
+        // a resolver with no upstream reports EAI_AGAIN, which .NET words as "Resource
+        // temporarily unavailable" - true, and no help at all to whoever is reading it. A
+        // container started before the host's DHCP lease is the usual way to get there.
+        IPAddress[] addresses;
+        try
+        {
+            addresses = await Dns.GetHostAddressesAsync(host, timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Timed out looking up '{host}' after {connectTimeout.TotalSeconds:F0}s. " +
+                "The DNS server is not answering; check the DNS settings of the host or container syscmd runs in.");
+        }
+        catch (SocketException ex)
+        {
+            throw new HostLookupException(host, ex);
+        }
+
         var client = new TcpClient { NoDelay = true };
         try
         {
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(connectTimeout);
-            await client.ConnectAsync(host, port, timeoutCts.Token);
+            await client.ConnectAsync(addresses, port, timeoutCts.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
